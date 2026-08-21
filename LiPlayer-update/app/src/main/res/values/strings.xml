@@ -1,38 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">LiPlayer</string>
+    <string name="err_playback">Ошибка воспроизведения: %1$s</string>
+
     <string name="hud_shift">Сдвиг: %1$d px</string>
     <string name="hud_safe">предел: ±%1$d px</string>
     <string name="hud_crop">ОБРЕЗКА</string>
-    <string name="err_playback">Ошибка воспроизведения: %1$s</string>
 
-    <string name="menu_title">Настройки</string>
-    <string name="menu_shift">Сдвиг изображения</string>
-    <string name="menu_audio">Звуковая дорожка</string>
-    <string name="menu_subs">Субтитры</string>
-    <string name="menu_speed">Скорость</string>
-    <string name="menu_resize">Соотношение сторон</string>
+    <string name="ctl_shift">Сдвиг</string>
+    <string name="ctl_quality">Качество</string>
+    <string name="ctl_audio">Звук</string>
+    <string name="ctl_subs">Субтитры</string>
+    <string name="ctl_speed">Скорость</string>
+    <string name="ctl_aspect">Кадр</string>
+    <string name="ctl_record">Запись</string>
 
-    <string name="shift_title">Сдвиг %1$d px (предел ±%2$d px)</string>
-    <string name="shift_up_edge">Вверх до края кадра</string>
-    <string name="shift_down_edge">Вниз до края кадра</string>
-    <string name="shift_reset">Сбросить в центр</string>
-    <string name="shift_step_up">Шаг вверх (−16 px)</string>
-    <string name="shift_step_down">Шаг вниз (+16 px)</string>
-    <string name="shift_hint">Точная настройка: стрелки ↑ ↓ на пульте</string>
+    <string name="row_label">%1$s: %2$s</string>
 
-    <string name="track_off">Выключить</string>
-    <string name="track_n">Дорожка %1$d</string>
-    <string name="no_tracks">Дорожек не найдено</string>
+    <string name="val_max">Максимум</string>
+    <string name="val_auto">Авто</string>
+    <string name="val_off">Выкл</string>
+    <string name="val_none">нет</string>
+    <string name="val_px">%1$d px</string>
+    <string name="val_speed">%1$s×</string>
+    <string name="val_res">%1$d×%2$d</string>
+    <string name="val_res_rate">%1$d×%2$d · %3$.1f Mbps</string>
+    <string name="val_track_n">Дорожка %1$d</string>
 
-    <string name="menu_quality">Качество видео</string>
-    <string name="quality_auto">Авто (адаптивно)</string>
-    <string name="quality_max">Всегда максимальное</string>
-    <string name="quality_line">%1$d×%2$d</string>
-    <string name="quality_line_rate">%1$d×%2$d · %3$.1f Mbps</string>
+    <string name="aspect_fit">По размеру</string>
+    <string name="aspect_fill">Растянуть</string>
+    <string name="aspect_zoom">Обрезать</string>
 
-    <string name="menu_rec_start">Записать эфир</string>
-    <string name="menu_rec_stop">Остановить запись (%1$s)</string>
     <string name="rec_started">Запись пошла: %1$s</string>
     <string name="rec_stopped">Записано %1$s → %2$s</string>
     <string name="rec_failed">Не удалось начать запись</string>
