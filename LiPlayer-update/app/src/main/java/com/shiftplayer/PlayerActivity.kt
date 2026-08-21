@@ -302,6 +302,7 @@ class PlayerActivity : ComponentActivity() {
         hud = findViewById(R.id.hud)
         drawer = findViewById(R.id.drawer)
         drawerList = findViewById(R.id.drawer_list)
+        drawerList.itemsCanFocus = true
         drawerEmpty = findViewById(R.id.drawer_empty)
         popup = findViewById(R.id.popup)
         actionBar = findViewById(R.id.action_bar)
@@ -1207,7 +1208,30 @@ class PlayerActivity : ComponentActivity() {
             reloadRecordings()
             drawer.visibility = View.VISIBLE
             pinController(true)
-            drawerList.requestFocus()
+            focusFirstRecording()
+        }
+    }
+
+    /**
+     * Наводит фокус на первую запись.
+     *
+     * Сразу после показа ящика рядов ещё нет — ListView их не разложил,
+     * поэтому ждём кадр отрисовки и при необходимости пробуем ещё раз.
+     */
+    private fun focusFirstRecording(attempt: Int = 0) {
+        if (recordings.isEmpty()) {
+            btnLibrary.requestFocus()
+            return
+        }
+        drawerList.post {
+            if (drawer.visibility != View.VISIBLE) return@post
+            drawerList.setSelection(0)
+            val row = drawerList.getChildAt(0)?.findViewById<View>(R.id.rec_row)
+            when {
+                row != null -> row.requestFocus()
+                attempt < 3 -> focusFirstRecording(attempt + 1)
+                else -> drawerList.requestFocus()
+            }
         }
     }
 
@@ -1240,6 +1264,7 @@ class PlayerActivity : ComponentActivity() {
                     thumbs.remove(f.absolutePath)
                     Toast.makeText(this, R.string.del_done, Toast.LENGTH_SHORT).show()
                     reloadRecordings()
+                    focusFirstRecording()
                 } else {
                     Toast.makeText(this, R.string.del_failed, Toast.LENGTH_LONG).show()
                 }
