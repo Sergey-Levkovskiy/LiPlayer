@@ -126,6 +126,12 @@ class PlayerActivity : ComponentActivity() {
     private var barActive = false
     private var barRow = ROW_SHIFT
 
+    /** Курсор режима на ряду «Сдвиг»: центр, верх, низ, вручную. */
+    private var shiftMode = 0
+
+    /** Ручной режим: стрелки вверх/вниз двигают кадр, а не ходят по рядам. */
+    private var manualShift = false
+
     private val ui = Handler(Looper.getMainLooper())
     private val hideHud = Runnable { hud.visibility = View.GONE }
     private val hideBar = Runnable { setBarVisible(false) }
@@ -383,6 +389,7 @@ class PlayerActivity : ComponentActivity() {
 
     private fun setBarVisible(visible: Boolean) {
         barActive = visible
+        if (!visible) manualShift = false
         sideBar.visibility = if (visible) View.VISIBLE else View.GONE
         ui.removeCallbacks(hideBar)
         if (visible) {
@@ -412,6 +419,7 @@ class PlayerActivity : ComponentActivity() {
     }
 
     private fun moveRow(delta: Int) {
+        manualShift = false
         val prev = barRow
         barRow = (barRow + delta + ROW_COUNT) % ROW_COUNT
         refreshRow(prev)
@@ -432,7 +440,7 @@ class PlayerActivity : ComponentActivity() {
     )
 
     private fun rowValue(i: Int): String = when (i) {
-        ROW_SHIFT -> getString(R.string.val_px, shiftPx.roundToInt())
+        ROW_SHIFT -> shiftValue()
         ROW_QUALITY -> qualityValue()
         ROW_AUDIO -> trackValue(C.TRACK_TYPE_AUDIO, audioIndex)
         ROW_SUBS -> if (subsIndex == 0) getString(R.string.val_off)
@@ -449,12 +457,44 @@ class PlayerActivity : ComponentActivity() {
         else getString(R.string.val_off)
     }
 
+    /**
+     * Подпись ряда «Сдвиг».
+     *
+     * Режим не хранится, а выводится из фактического сдвига — тогда подпись
+     * не расходится с картинкой после загрузки сохранённого значения.
+     */
+    private fun shiftValue(): String {
+        if (manualShift) return getString(R.string.shift_manual_on, shiftPx.roundToInt())
+        if (shiftMode == 3) return getString(R.string.shift_manual)
+        val edge = edgeShift()
+        return when {
+            abs(shiftPx) < 0.5f -> getString(R.string.shift_center)
+            edge > 0.5f && abs(shiftPx + edge) < 0.5f -> getString(R.string.shift_top)
+            edge > 0.5f && abs(shiftPx - edge) < 0.5f -> getString(R.string.shift_bottom)
+            else -> getString(R.string.val_px, shiftPx.roundToInt())
+        }
+    }
+
+    private fun nudgeShift(dir: Int, fast: Boolean) {
+        shiftPx += dir * (if (fast) 24f else 4f)
+        applyShift(showHud = false)
+        refreshRow(ROW_SHIFT)
+        keepBarAlive()
+    }
+
     /** Влево/вправо на выбранном ряду. Панель остаётся открытой. */
     private fun stepRow(dir: Int, fast: Boolean) {
         when (barRow) {
             ROW_SHIFT -> {
-                shiftPx += dir * (if (fast) 24f else 4f)
-                applyShift(showHud = false)
+                // Влево/вправо перебирают режимы, сам сдвиг тут не двигается.
+                manualShift = false
+                shiftMode = (shiftMode + dir + 4) % 4
+                when (shiftMode) {
+                    0 -> { shiftPx = 0f; applyShift(showHud = false) }
+                    1 -> { shiftPx = -edgeShift(); applyShift(showHud = false) }
+                    2 -> { shiftPx = edgeShift(); applyShift(showHud = false) }
+                    else -> manualShift = true
+                }
             }
             ROW_QUALITY -> stepQuality(dir)
             ROW_AUDIO -> stepTrack(C.TRACK_TYPE_AUDIO, dir)
@@ -476,14 +516,10 @@ class PlayerActivity : ComponentActivity() {
     /** OK на выбранном ряду. */
     private fun activateRow() {
         when (barRow) {
-            // Центр -> верхний край -> нижний край -> центр.
+            // OK входит в ручной режим и выходит из него.
             ROW_SHIFT -> {
-                shiftPx = when {
-                    abs(shiftPx) < 0.5f -> -edgeShift()
-                    shiftPx < 0f -> edgeShift()
-                    else -> 0f
-                }
-                applyShift(showHud = true)
+                manualShift = !manualShift
+                if (manualShift) shiftMode = 3
             }
             ROW_RECORD -> toggleRecording()
             else -> stepRow(1, fast = false)
@@ -647,6 +683,31 @@ class PlayerActivity : ComponentActivity() {
         if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
 
         val code = event.keyCode
+
+        // Ручной сдвиг забирает вертикальные стрелки себе.
+        if (barActive && manualShift) {
+            when (code) {
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    nudgeShift(-1, event.repeatCount > 4); return true
+                }
+                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    nudgeShift(1, event.repeatCount > 4); return true
+                }
+                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    stepRow(-1, fast = false); return true
+                }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    stepRow(1, fast = false); return true
+                }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_BACK -> {
+                    manualShift = false
+                    refreshRow(ROW_SHIFT)
+                    keepBarAlive()
+                    return true
+                }
+            }
+        }
 
         // Панель настроек открыта — стрелки её и обслуживают.
         if (barActive) {
