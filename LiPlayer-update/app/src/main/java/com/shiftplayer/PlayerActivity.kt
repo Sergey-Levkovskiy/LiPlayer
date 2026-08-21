@@ -1,5 +1,6 @@
 package com.shiftplayer
 
+import android.app.AlertDialog
 import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Bundle
@@ -17,10 +18,14 @@ import androidx.annotation.OptIn
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
@@ -97,6 +102,10 @@ class PlayerActivity : ComponentActivity() {
         playerView.setShowFastForwardButton(true)
         playerView.setShowRewindButton(true)
         playerView.requestFocus()
+
+        // Шестерёнка Media3 открывает наше меню: там и дорожки, и сдвиг.
+        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_settings)
+            ?.setOnClickListener { openSettings() }
 
         val uri = intent?.data
         if (uri != null) startPlayback(uri) else pickVideo.launch(arrayOf("video/*"))
@@ -292,6 +301,7 @@ class PlayerActivity : ComponentActivity() {
 
         // Каналы двигают картинку всегда, даже поверх панели управления.
         when (event.keyCode) {
+            KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_SETTINGS -> { openSettings(); return true }
             KeyEvent.KEYCODE_CHANNEL_UP -> { nudge(-step); return true }
             KeyEvent.KEYCODE_CHANNEL_DOWN -> { nudge(step); return true }
         }
@@ -309,6 +319,131 @@ class PlayerActivity : ComponentActivity() {
             }
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    // ---------------------------------------------------------------- settings
+
+    /** Единое меню: звуковая дорожка, субтитры, скорость, сдвиг кадра. */
+    private fun openSettings() {
+        val items = arrayOf(
+            getString(R.string.menu_shift),
+            getString(R.string.menu_audio),
+            getString(R.string.menu_subs),
+            getString(R.string.menu_speed),
+            getString(R.string.menu_resize)
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.menu_title)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> openShiftMenu()
+                    1 -> openTrackMenu(C.TRACK_TYPE_AUDIO)
+                    2 -> openTrackMenu(C.TRACK_TYPE_TEXT)
+                    3 -> openSpeedMenu()
+                    4 -> cycleResize()
+                }
+            }
+            .setOnDismissListener { goFullscreen() }
+            .show()
+    }
+
+    private fun openShiftMenu() {
+        val items = arrayOf(
+            getString(R.string.shift_up_edge),
+            getString(R.string.shift_down_edge),
+            getString(R.string.shift_reset),
+            getString(R.string.shift_step_up),
+            getString(R.string.shift_step_down),
+            getString(R.string.shift_hint)
+        )
+        AlertDialog.Builder(this)
+            .setTitle(
+                getString(
+                    R.string.shift_title,
+                    shiftPx.roundToInt(),
+                    safeMarginPx.roundToInt()
+                )
+            )
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> snapToTop()
+                    1 -> snapToBottom()
+                    2 -> resetShift()
+                    // Шаг оставляет меню открытым: подряд жать удобнее.
+                    3 -> { nudge(-16f); openShiftMenu() }
+                    4 -> { nudge(16f); openShiftMenu() }
+                    5 -> showHud()
+                }
+            }
+            .setOnDismissListener { goFullscreen() }
+            .show()
+    }
+
+    private fun openTrackMenu(type: Int) {
+        val p = player ?: return
+        val groups = p.currentTracks.groups.filter { it.type == type && it.isSupported }
+        if (groups.isEmpty()) {
+            Toast.makeText(this, R.string.no_tracks, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val labels = ArrayList<String>()
+        val targets = ArrayList<Pair<Tracks.Group, Int>?>()
+
+        // Субтитры можно выключить, звук — нет.
+        if (type == C.TRACK_TYPE_TEXT) {
+            labels.add(getString(R.string.track_off))
+            targets.add(null)
+        }
+        groups.forEach { g ->
+            for (i in 0 until g.length) {
+                if (!g.isTrackSupported(i)) continue
+                labels.add(trackLabel(g.getTrackFormat(i), labels.size))
+                targets.add(g to i)
+            }
+        }
+
+        val titleRes = if (type == C.TRACK_TYPE_AUDIO) R.string.menu_audio else R.string.menu_subs
+        AlertDialog.Builder(this)
+            .setTitle(titleRes)
+            .setItems(labels.toTypedArray()) { _, which ->
+                val target = targets[which]
+                val params = p.trackSelectionParameters.buildUpon()
+                if (target == null) {
+                    params.setTrackTypeDisabled(type, true)
+                } else {
+                    params.setTrackTypeDisabled(type, false)
+                    params.setOverrideForType(
+                        TrackSelectionOverride(target.first.mediaTrackGroup, target.second)
+                    )
+                }
+                p.trackSelectionParameters = params.build()
+            }
+            .setOnDismissListener { goFullscreen() }
+            .show()
+    }
+
+    private fun openSpeedMenu() {
+        val p = player ?: return
+        val speeds = floatArrayOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.menu_speed)
+            .setItems(speeds.map { "${it}x" }.toTypedArray()) { _, which ->
+                p.setPlaybackSpeed(speeds[which])
+            }
+            .setOnDismissListener { goFullscreen() }
+            .show()
+    }
+
+    /** Человекочитаемое имя дорожки: язык, каналы, кодек. */
+    private fun trackLabel(f: Format, ordinal: Int): String {
+        val parts = ArrayList<String>()
+        f.label?.let { parts.add(it) }
+        f.language?.takeIf { it != "und" }?.let { parts.add(it) }
+        if (f.channelCount > 0) parts.add("${f.channelCount} ch")
+        f.codecs?.substringBefore('.')?.let { parts.add(it) }
+        return if (parts.isEmpty()) getString(R.string.track_n, ordinal + 1)
+        else parts.joinToString(" · ")
     }
 
     // --------------------------------------------------------------- fullscreen

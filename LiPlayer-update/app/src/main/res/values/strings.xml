@@ -5,4 +5,23 @@
     <string name="hud_safe">предел: ±%1$d px</string>
     <string name="hud_crop">ОБРЕЗКА</string>
     <string name="err_playback">Ошибка воспроизведения: %1$s</string>
+
+    <string name="menu_title">Настройки</string>
+    <string name="menu_shift">Сдвиг изображения</string>
+    <string name="menu_audio">Звуковая дорожка</string>
+    <string name="menu_subs">Субтитры</string>
+    <string name="menu_speed">Скорость</string>
+    <string name="menu_resize">Соотношение сторон</string>
+
+    <string name="shift_title">Сдвиг %1$d px (предел ±%2$d px)</string>
+    <string name="shift_up_edge">Вверх до края кадра</string>
+    <string name="shift_down_edge">Вниз до края кадра</string>
+    <string name="shift_reset">Сбросить в центр</string>
+    <string name="shift_step_up">Шаг вверх (−16 px)</string>
+    <string name="shift_step_down">Шаг вниз (+16 px)</string>
+    <string name="shift_hint">Точная настройка: стрелки ↑ ↓ на пульте</string>
+
+    <string name="track_off">Выключить</string>
+    <string name="track_n">Дорожка %1$d</string>
+    <string name="no_tracks">Дорожек не найдено</string>
 </resources>
