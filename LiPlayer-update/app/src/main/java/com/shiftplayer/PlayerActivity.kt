@@ -191,7 +191,6 @@ class PlayerActivity : ComponentActivity() {
 
     private val ui = Handler(Looper.getMainLooper())
     private val hideHud = Runnable { hud.visibility = View.GONE }
-    private val hideUi = Runnable { hideAllPanels() }
 
     private val clockFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
     private val stampFmt = SimpleDateFormat("d MMM, HH:mm", Locale.getDefault())
@@ -238,7 +237,17 @@ class PlayerActivity : ComponentActivity() {
 
         playerView.resizeMode = ASPECTS[aspectIndex]
         playerView.controllerShowTimeoutMs = UI_TIMEOUT_MS.toInt()
-        playerView.setShowSubtitleButton(true)
+
+        // Штатные настройки и субтитры Media3 не нужны — их заменяет наше
+        // меню, которое стоит на их месте в правом нижнем углу панели.
+        playerView.setShowSubtitleButton(false)
+        playerView.setControllerVisibilityListener(
+            object : PlayerView.ControllerVisibilityListener {
+                override fun onVisibilityChanged(visibility: Int) {
+                    onControllerVisibility(visibility == View.VISIBLE)
+                }
+            }
+        )
 
         buildSideBar()
         wireActions()
@@ -535,17 +544,52 @@ class PlayerActivity : ComponentActivity() {
         syncRecordButtons()
     }
 
-    /** Любое нажатие поднимает панель действий и продлевает ей жизнь. */
+    /**
+     * Наши иконки живут и умирают вместе с панелью Media3 — иначе они
+     * висели бы над видео, когда панель уже скрылась.
+     */
+    private fun onControllerVisibility(shown: Boolean) {
+        actionBar.visibility = if (shown) View.VISIBLE else View.GONE
+        // INVISIBLE, а не GONE: иначе плашка записи под кнопкой прыгает.
+        btnLibrary.visibility = if (shown) View.VISIBLE else View.INVISIBLE
+        hideStockButtons()
+        if (!shown) closePanels()
+    }
+
+    /**
+     * Шестерёнка Media3 скрывается по id: публичного сеттера у неё нет.
+     * Повторяем при каждом показе панели — библиотека её пересобирает.
+     */
+    private fun hideStockButtons() {
+        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_settings)
+            ?.visibility = View.GONE
+        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_subtitle)
+            ?.visibility = View.GONE
+    }
+
+    /** Любое нажатие поднимает панель и продлевает ей жизнь. */
     private fun showUi(focus: Boolean) {
-        actionBar.visibility = View.VISIBLE
-        leftTop.visibility = View.VISIBLE
+        playerView.showController()
+        hideStockButtons()
         if (focus && !hasPanelFocus()) btnRecord.requestFocus()
-        keepUiAlive()
+    }
+
+    /** Пока открыт список или всплывашка, панель не должна уезжать. */
+    private fun pinController(pinned: Boolean) {
+        playerView.controllerShowTimeoutMs =
+            if (pinned) 0 else UI_TIMEOUT_MS.toInt()
+        playerView.showController()
     }
 
     private fun keepUiAlive() {
-        ui.removeCallbacks(hideUi)
-        ui.postDelayed(hideUi, UI_TIMEOUT_MS)
+        if (playerView.controllerShowTimeoutMs != 0) playerView.showController()
+    }
+
+    private fun closePanels() {
+        popup.visibility = View.GONE
+        popup.removeAllViews()
+        drawer.visibility = View.GONE
+        sideScroll.visibility = View.GONE
     }
 
     private fun hasPanelFocus(): Boolean {
@@ -564,18 +608,6 @@ class PlayerActivity : ComponentActivity() {
         return false
     }
 
-    private fun hideAllPanels() {
-        // Открытые списки не закрываем по таймауту: человек их читает.
-        if (drawer.visibility == View.VISIBLE || sideScroll.visibility == View.VISIBLE) {
-            keepUiAlive()
-            return
-        }
-        popup.visibility = View.GONE
-        popup.removeAllViews()
-        actionBar.visibility = View.GONE
-        if (!recorder.isRecording) leftTop.visibility = View.GONE
-    }
-
     // ------------------------------------------------------------- всплывашки
 
     /** Меню НАД кнопкой: три иконки для сдвига, три пункта для качества. */
@@ -583,8 +615,8 @@ class PlayerActivity : ComponentActivity() {
         popup.removeAllViews()
         views.forEach { popup.addView(it) }
         popup.visibility = View.VISIBLE
+        pinController(true)
         views.firstOrNull()?.requestFocus()
-        keepUiAlive()
     }
 
     private fun popupIcon(iconRes: Int, label: String, action: () -> Unit): View {
@@ -595,8 +627,8 @@ class PlayerActivity : ComponentActivity() {
             action()
             popup.visibility = View.GONE
             popup.removeAllViews()
+            pinController(false)
             actionBar.requestFocus()
-            keepUiAlive()
         }
         return row
     }
@@ -640,14 +672,15 @@ class PlayerActivity : ComponentActivity() {
     private fun toggleSidePanel() {
         if (sideScroll.visibility == View.VISIBLE) {
             sideScroll.visibility = View.GONE
+            pinController(false)
             btnSettings.requestFocus()
         } else {
             drawer.visibility = View.GONE
             refreshAllRows()
             sideScroll.visibility = View.VISIBLE
+            pinController(true)
             rowViews.firstOrNull()?.requestFocus()
         }
-        keepUiAlive()
     }
 
     private fun buildSideBar() {
@@ -1141,14 +1174,15 @@ class PlayerActivity : ComponentActivity() {
     private fun toggleDrawer() {
         if (drawer.visibility == View.VISIBLE) {
             drawer.visibility = View.GONE
+            pinController(false)
             btnLibrary.requestFocus()
         } else {
             sideScroll.visibility = View.GONE
             reloadRecordings()
             drawer.visibility = View.VISIBLE
+            pinController(true)
             drawerList.requestFocus()
         }
-        keepUiAlive()
     }
 
     private fun reloadRecordings() {
@@ -1221,12 +1255,15 @@ class PlayerActivity : ComponentActivity() {
                 popup.visibility == View.VISIBLE -> {
                     popup.visibility = View.GONE
                     popup.removeAllViews()
+                    pinController(false)
                     btnShift.requestFocus()
                     return true
                 }
                 drawer.visibility == View.VISIBLE -> { toggleDrawer(); return true }
                 sideScroll.visibility == View.VISIBLE -> { toggleSidePanel(); return true }
-                actionBar.visibility == View.VISIBLE -> { hideAllPanels(); return true }
+                playerView.isControllerFullyVisible -> {
+                    playerView.hideController(); return true
+                }
             }
         }
 
@@ -1236,7 +1273,7 @@ class PlayerActivity : ComponentActivity() {
         }
 
         // Панель скрыта — первое нажатие только поднимает её.
-        if (actionBar.visibility != View.VISIBLE) {
+        if (!playerView.isControllerFullyVisible) {
             showUi(focus = true)
             if (event.keyCode == KeyEvent.KEYCODE_DPAD_UP ||
                 event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN ||
