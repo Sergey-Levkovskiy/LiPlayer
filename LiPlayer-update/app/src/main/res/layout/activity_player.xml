@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  root         : чёрный контейнер, обрезает всё, что вышло за экран
-  player_view  : ТОЛЬКО видео и субтитры, двигается через translationY
-  side_scroll  : панель настроек справа, прокручивается — рядов много
-  corner_stack : часы и индикатор записи, правый верхний угол
+  root        : чёрный контейнер, обрезает всё, что вышло за экран
+  player_view : видео и субтитры; сюда же встроен контроллер Media3
+  left_top    : кнопка «записи» и компактный индикатор записи
+  drawer      : список записей, выезжает слева
+  popup       : всплывающее меню НАД панелью действий
+  action_bar  : четыре действия внизу справа
+  side_scroll : остальные настройки, справа по центру
+
+  Навигация — штатным фокусом Android, без ручной маршрутизации кнопок:
+  focusable + nextFocus, а не dispatchKeyEvent.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -24,6 +30,239 @@
         app:use_controller="true"
         app:show_buffering="when_playing" />
 
+    <!-- ============================================= верхний левый угол -->
+    <LinearLayout
+        android:id="@+id/left_top"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|left"
+        android:layout_marginLeft="22dp"
+        android:layout_marginTop="18dp"
+        android:gravity="left"
+        android:orientation="vertical">
+
+        <ImageButton
+            android:id="@+id/btn_library"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
+            android:background="@drawable/btn_focus"
+            android:contentDescription="@string/lib_recordings"
+            android:focusable="true"
+            android:padding="9dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_list" />
+
+        <LinearLayout
+            android:id="@+id/rec_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/badge_bg"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingLeft="8dp"
+            android:paddingRight="10dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:visibility="gone">
+
+            <ImageView
+                android:id="@+id/rec_dot"
+                android:layout_width="11dp"
+                android:layout_height="11dp"
+                android:contentDescription="@string/ctl_record"
+                android:src="@drawable/ic_record" />
+
+            <TextView
+                android:id="@+id/rec_size"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="7dp"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/clock"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|right"
+        android:layout_marginTop="20dp"
+        android:layout_marginRight="26dp"
+        android:shadowColor="#FF000000"
+        android:shadowRadius="6"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/hud"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="48dp"
+        android:background="#B3000000"
+        android:paddingLeft="20dp"
+        android:paddingRight="20dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:textColor="#FFFFFF"
+        android:textSize="20sp"
+        android:visibility="gone" />
+
+    <!-- ================================================= ящик записей -->
+    <LinearLayout
+        android:id="@+id/drawer"
+        android:layout_width="460dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="left"
+        android:background="@drawable/drawer_bg"
+        android:orientation="vertical"
+        android:paddingLeft="22dp"
+        android:paddingRight="18dp"
+        android:paddingTop="24dp"
+        android:paddingBottom="18dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/lib_recordings"
+            android:textAllCaps="true"
+            android:textColor="@color/brand_accent"
+            android:textSize="14sp"
+            android:letterSpacing="0.09" />
+
+        <TextView
+            android:id="@+id/drawer_empty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:text="@string/drawer_empty"
+            android:textColor="#8AFFFFFF"
+            android:textSize="15sp"
+            android:visibility="gone" />
+
+        <ListView
+            android:id="@+id/drawer_list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="10dp"
+            android:divider="@null"
+            android:dividerHeight="0dp"
+            android:scrollbars="none" />
+    </LinearLayout>
+
+    <!-- ============================== всплывашка над панелью действий -->
+    <LinearLayout
+        android:id="@+id/popup"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|right"
+        android:layout_marginRight="26dp"
+        android:layout_marginBottom="168dp"
+        android:background="@drawable/popup_bg"
+        android:orientation="vertical"
+        android:padding="6dp"
+        android:visibility="gone" />
+
+    <!-- ==================================== четыре действия внизу справа -->
+    <LinearLayout
+        android:id="@+id/action_bar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|right"
+        android:layout_marginRight="24dp"
+        android:layout_marginBottom="104dp"
+        android:background="@drawable/bar_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="6dp">
+
+        <ImageButton
+            android:id="@+id/btn_record"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@drawable/btn_focus"
+            android:contentDescription="@string/ctl_record"
+            android:focusable="true"
+            android:padding="11dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_record" />
+
+        <ImageButton
+            android:id="@+id/btn_rec_pause"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@drawable/btn_focus"
+            android:contentDescription="@string/rec_pause"
+            android:focusable="true"
+            android:padding="11dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_pause"
+            android:visibility="gone" />
+
+        <ImageButton
+            android:id="@+id/btn_rec_snooze"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@drawable/btn_focus"
+            android:contentDescription="@string/rec_snooze"
+            android:focusable="true"
+            android:padding="11dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_pause_timed"
+            android:visibility="gone" />
+
+        <ImageButton
+            android:id="@+id/btn_rec_stop"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@drawable/btn_focus"
+            android:contentDescription="@string/rec_stop"
+            android:focusable="true"
+            android:padding="12dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_stop"
+            android:visibility="gone" />
+
+        <ImageButton
+            android:id="@+id/btn_quality"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@drawable/btn_focus"
+            android:contentDescription="@string/ctl_quality"
+            android:focusable="true"
+            android:padding="11dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_quality" />
+
+        <ImageButton
+            android:id="@+id/btn_shift"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@drawable/btn_focus"
+            android:contentDescription="@string/ctl_shift"
+            android:focusable="true"
+            android:padding="11dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_shift" />
+
+        <ImageButton
+            android:id="@+id/btn_settings"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@drawable/btn_focus"
+            android:contentDescription="@string/menu_more"
+            android:focusable="true"
+            android:padding="10dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_gear" />
+    </LinearLayout>
+
+    <!-- ================================== остальные настройки, справа -->
     <ScrollView
         android:id="@+id/side_scroll"
         android:layout_width="wrap_content"
@@ -41,79 +280,10 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
+            android:paddingLeft="8dp"
+            android:paddingRight="8dp"
             android:paddingTop="8dp"
             android:paddingBottom="8dp" />
     </ScrollView>
-
-    <LinearLayout
-        android:id="@+id/corner_stack"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|right"
-        android:layout_marginTop="20dp"
-        android:layout_marginRight="26dp"
-        android:gravity="right"
-        android:orientation="vertical">
-
-        <TextView
-            android:id="@+id/clock"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:shadowColor="#FF000000"
-            android:shadowDx="0"
-            android:shadowDy="0"
-            android:shadowRadius="6"
-            android:textColor="#FFFFFF"
-            android:textSize="18sp"
-            android:visibility="gone" />
-
-        <LinearLayout
-            android:id="@+id/rec_badge"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/badge_bg"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingStart="12dp"
-            android:paddingEnd="14dp"
-            android:paddingTop="7dp"
-            android:paddingBottom="7dp"
-            android:visibility="gone">
-
-            <ImageView
-                android:id="@+id/rec_dot"
-                android:layout_width="16dp"
-                android:layout_height="16dp"
-                android:contentDescription="@string/ctl_record"
-                android:src="@drawable/ic_record" />
-
-            <TextView
-                android:id="@+id/rec_size"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="9dp"
-                android:textColor="#FFFFFF"
-                android:textSize="17sp" />
-        </LinearLayout>
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/hud"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="48dp"
-        android:background="#B3000000"
-        android:paddingStart="20dp"
-        android:paddingEnd="20dp"
-        android:paddingTop="10dp"
-        android:paddingBottom="10dp"
-        android:textColor="#FFFFFF"
-        android:textSize="20sp"
-        android:visibility="gone" />
-
 
 </FrameLayout>

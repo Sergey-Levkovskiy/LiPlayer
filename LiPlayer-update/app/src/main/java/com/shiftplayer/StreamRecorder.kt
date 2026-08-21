@@ -41,6 +41,15 @@ class StreamRecorder(dir: File) : DataSink {
     var isRecording = false
         private set
 
+    /**
+     * Пауза: файл остаётся открытым, но байты не пишутся.
+     *
+     * Место склейки для декодера безболезненно — MPEG-TS разбирается по
+     * пакетам, а не по непрерывному таймкоду.
+     */
+    @Volatile
+    var isPaused = false
+
     var file: File? = null
         private set
 
@@ -58,6 +67,7 @@ class StreamRecorder(dir: File) : DataSink {
             out = FileOutputStream(target)
             file = target
             bytesWritten = 0L
+            isPaused = false
             isRecording = true
             target
         } catch (e: Exception) {
@@ -70,6 +80,7 @@ class StreamRecorder(dir: File) : DataSink {
     fun stop(): File? = synchronized(lock) {
         if (!isRecording) return null
         isRecording = false
+        isPaused = false
         skipCurrent = true
         try {
             out?.flush()
@@ -87,7 +98,7 @@ class StreamRecorder(dir: File) : DataSink {
     }
 
     override fun write(buffer: ByteArray, offset: Int, length: Int) {
-        if (skipCurrent) return
+        if (skipCurrent || isPaused) return
         synchronized(lock) {
             val stream = out ?: return
             try {

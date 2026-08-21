@@ -1,25 +1,32 @@
 package com.shiftplayer
 
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.SharedPreferences
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
-import android.view.ViewGroup
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.BaseAdapter
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ListView
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.annotation.OptIn
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -41,7 +48,6 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
-import androidx.core.content.ContextCompat
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.DefaultTimeBar
 import androidx.media3.ui.PlayerView
@@ -56,13 +62,11 @@ import kotlin.math.roundToInt
  * Плеер с вертикальным сдвигом изображения БЕЗ масштабирования.
  *
  * Двигается PlayerView внутри чёрного контейнера с clipChildren=true —
- * пиксели не пересчитываются, кадр рисуется в другом месте экрана. Панель
- * управления Media3 живёт внутри PlayerView и едет вместе с кадром: так
- * было изначально, к этому поведению вернулись сознательно.
+ * пиксели не пересчитываются, кадр рисуется в другом месте экрана.
  *
- * Настройки — панель иконок справа: вверх/вниз выбирают параметр,
- * влево/вправо меняют значение не закрывая панель. Открывается шестерёнкой,
- * кнопкой MENU или стрелкой вправо.
+ * Управление: четыре действия внизу справа (запись, качество, сдвиг,
+ * настройки), список записей слева сверху. Навигация — штатным фокусом
+ * Android, а не ручным разбором кнопок: так пульт ведёт себя предсказуемо.
  */
 @OptIn(UnstableApi::class)
 class PlayerActivity : ComponentActivity() {
@@ -75,14 +79,22 @@ class PlayerActivity : ComponentActivity() {
         const val SEEK_BAR_MS = 120_000L
 
         /**
-         * Насколько не доводим кадр до края чёрной полосы.
-         *
-         * Ровно на краю панель телевизора начинает «плыть» масштабом —
-         * край кадра попадает в зону её собственного скейлера.
+         * Насколько не доводим кадр до края чёрной полосы: ровно на краю
+         * панель телевизора начинает «плыть» масштабом.
          */
         const val EDGE_GUARD_PX = 4f
 
-        const val UI_TIMEOUT_MS = 5_000L
+        const val UI_TIMEOUT_MS = 6_000L
+
+        /**
+         * Диагональ панели, для которой «Полный» размер = 100 %.
+         *
+         * Меняется одной цифрой, если приложение поедет на другой телевизор.
+         */
+        const val BASE_DIAGONAL_IN = 98
+
+        /** Варианты уменьшения картинки, дюймы по диагонали. */
+        val SCREEN_IN = intArrayOf(0, 85, 75, 65, 55)
 
         val SPEEDS = floatArrayOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
 
@@ -92,7 +104,6 @@ class PlayerActivity : ComponentActivity() {
             AspectRatioFrameLayout.RESIZE_MODE_ZOOM
         )
 
-        /** Выкл, мелкие, средние, крупные. */
         val CLOCK_SP = floatArrayOf(0f, 14f, 18f, 24f)
         val CLOCK_ALPHA = floatArrayOf(0.25f, 0.45f, 0.65f, 0.9f)
 
@@ -102,31 +113,50 @@ class PlayerActivity : ComponentActivity() {
         /** Длительность записи, минуты. 0 — без лимита. */
         val REC_DURATIONS = intArrayOf(0, 15, 30, 45, 60, 90, 120, 180)
 
-        // Порядок рядов в панели слева.
-        const val ROW_SHIFT = 0
-        const val ROW_QUALITY = 1
-        const val ROW_AUDIO = 2
-        const val ROW_SUBS = 3
-        const val ROW_SPEED = 4
-        const val ROW_ASPECT = 5
+        /** Пауза «на рекламу», секунды. */
+        val SNOOZE_SEC = intArrayOf(120, 180, 270, 300, 420, 600)
+
+        // Ряды в панели «ещё настройки». Запись, качество и сдвиг живут
+        // отдельными кнопками, поэтому здесь их нет.
+        const val ROW_AUDIO = 0
+        const val ROW_SUBS = 1
+        const val ROW_SPEED = 2
+        const val ROW_ASPECT = 3
+        const val ROW_SCREEN = 4
+        const val ROW_SHIFT_MANUAL = 5
         const val ROW_CLOCK = 6
         const val ROW_CLOCK_DIM = 7
-        const val ROW_RECORD = 8
-        const val ROW_REC_DELAY = 9
-        const val ROW_REC_DUR = 10
+        const val ROW_REC_DELAY = 8
+        const val ROW_REC_DUR = 9
+        const val ROW_SNOOZE = 10
         const val ROW_REC_DIR = 11
         const val ROW_COUNT = 12
     }
 
     private lateinit var root: FrameLayout
     private lateinit var playerView: PlayerView
+    private lateinit var leftTop: LinearLayout
+    private lateinit var btnLibrary: ImageButton
+    private lateinit var clock: TextView
+    private lateinit var hud: TextView
+    private lateinit var drawer: LinearLayout
+    private lateinit var drawerList: ListView
+    private lateinit var drawerEmpty: TextView
+    private lateinit var popup: LinearLayout
+    private lateinit var actionBar: LinearLayout
     private lateinit var sideScroll: ScrollView
     private lateinit var sideBar: LinearLayout
-    private lateinit var clock: TextView
     private lateinit var recBadge: LinearLayout
     private lateinit var recDot: ImageView
     private lateinit var recSize: TextView
-    private lateinit var hud: TextView
+
+    private lateinit var btnRecord: ImageButton
+    private lateinit var btnRecPause: ImageButton
+    private lateinit var btnRecSnooze: ImageButton
+    private lateinit var btnRecStop: ImageButton
+    private lateinit var btnQuality: ImageButton
+    private lateinit var btnShift: ImageButton
+    private lateinit var btnSettings: ImageButton
 
     private val rowViews = ArrayList<View>(ROW_COUNT)
     private val rowLabels = ArrayList<TextView>(ROW_COUNT)
@@ -135,92 +165,70 @@ class PlayerActivity : ComponentActivity() {
     private var prefs: SharedPreferences? = null
     private var currentUri: Uri? = null
 
-    /** Сдвиг в пикселях: плюс — вниз, минус — вверх. */
     private var shiftPx = 0f
-
-    /** Половина чёрной полосы — предел сдвига без обрезки кадра. */
     private var safeMarginPx = 0f
-
-    /** У 2.35:1 и 16:9 свой сохранённый ручной сдвиг. */
     private var aspectKey = "shift_default"
 
-    /**
-     * Режим сдвига: 0 центр, 1 верхний край, 2 нижний край, 3 вручную.
-     *
-     * Хранится именно режим, а не пиксели: у каждого фильма своя толщина
-     * полос, поэтому «вверх до края» пересчитывается под новую геометрию.
-     */
+    /** 0 центр, 1 верхний край, 2 нижний край, 3 вручную. */
     private var shiftMode = 0
-
-    private var manualShift = false
 
     private var speedIndex = 2
     private var aspectIndex = 0
     private var qualityIndex = 0
     private var audioIndex = 0
     private var subsIndex = 0
-
+    private var screenIndex = 0
     private var clockSize = 0
     private var clockDim = 2
-
     private var recDelayIndex = 0
     private var recDurIndex = 0
     private var recDirIndex = 0
+    private var snoozeIndex = 2          // 4,5 минуты
 
-    /** Момент автостарта и автостопа записи, 0 — не задан. */
     private var recStartAt = 0L
     private var recStopAt = 0L
-
-    private var barActive = false
-    private var barRow = ROW_SHIFT
+    private var recResumeAt = 0L
 
     private val ui = Handler(Looper.getMainLooper())
     private val hideHud = Runnable { hud.visibility = View.GONE }
-    private val hideBar = Runnable { setBarVisible(false) }
+    private val hideUi = Runnable { hideAllPanels() }
 
     private val clockFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+    private val stampFmt = SimpleDateFormat("d MMM, HH:mm", Locale.getDefault())
 
-    /** Одна секунда: часы, счётчик записи, отсрочка, автостоп. */
+    private val recordings = ArrayList<File>()
+    private val thumbs = HashMap<String, Bitmap?>()
+
+    private val recorder by lazy { StreamRecorder(recDirs().first()) }
+
+    /** Одна секунда: часы, счётчик записи, отсрочки и автостопы. */
     private val tick = object : Runnable {
         override fun run() {
             val now = System.currentTimeMillis()
-
             if (clockSize > 0) clock.text = clockFmt.format(Date(now))
 
             if (recStartAt in 1..now) {
                 recStartAt = 0L
                 startRecording()
             }
-            if (recorder.isRecording && recStopAt in 1..now) {
-                stopRecording()
+            if (recorder.isRecording && recResumeAt in 1..now) {
+                recResumeAt = 0L
+                recorder.isPaused = false
+                syncRecordButtons()
             }
+            if (recorder.isRecording && recStopAt in 1..now) stopRecording()
             if (recorder.isRecording || recStartAt > 0L) refreshRecBadge()
-            if (barActive) {
-                refreshRow(ROW_RECORD)
-                if (manualShift) refreshRow(ROW_SHIFT)
-            }
+
             ui.postDelayed(this, 1_000L)
         }
     }
-
-    /** Пишет сетевые байты в файл параллельно воспроизведению. */
-    private val recorder by lazy { StreamRecorder(recDirs().first()) }
 
     // ---------------------------------------------------------------- lifecycle
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
-
-        root = findViewById(R.id.root)
-        playerView = findViewById(R.id.player_view)
-        sideScroll = findViewById(R.id.side_scroll)
-        sideBar = findViewById(R.id.side_bar)
-        clock = findViewById(R.id.clock)
-        recBadge = findViewById(R.id.rec_badge)
-        recDot = findViewById(R.id.rec_dot)
-        recSize = findViewById(R.id.rec_size)
-        hud = findViewById(R.id.hud)
+        bindViews()
 
         prefs = getSharedPreferences("shift_player", MODE_PRIVATE)
         restoreSettings()
@@ -233,8 +241,10 @@ class PlayerActivity : ComponentActivity() {
         playerView.setShowSubtitleButton(true)
 
         buildSideBar()
+        wireActions()
         styleControls()
         applyClockStyle()
+        applyScreenSize()
         ui.post(tick)
 
         val uri = intent?.data
@@ -270,6 +280,33 @@ class PlayerActivity : ComponentActivity() {
         releasePlayer()
     }
 
+    private fun bindViews() {
+        root = findViewById(R.id.root)
+        playerView = findViewById(R.id.player_view)
+        leftTop = findViewById(R.id.left_top)
+        btnLibrary = findViewById(R.id.btn_library)
+        clock = findViewById(R.id.clock)
+        hud = findViewById(R.id.hud)
+        drawer = findViewById(R.id.drawer)
+        drawerList = findViewById(R.id.drawer_list)
+        drawerEmpty = findViewById(R.id.drawer_empty)
+        popup = findViewById(R.id.popup)
+        actionBar = findViewById(R.id.action_bar)
+        sideScroll = findViewById(R.id.side_scroll)
+        sideBar = findViewById(R.id.side_bar)
+        recBadge = findViewById(R.id.rec_badge)
+        recDot = findViewById(R.id.rec_dot)
+        recSize = findViewById(R.id.rec_size)
+
+        btnRecord = findViewById(R.id.btn_record)
+        btnRecPause = findViewById(R.id.btn_rec_pause)
+        btnRecSnooze = findViewById(R.id.btn_rec_snooze)
+        btnRecStop = findViewById(R.id.btn_rec_stop)
+        btnQuality = findViewById(R.id.btn_quality)
+        btnShift = findViewById(R.id.btn_shift)
+        btnSettings = findViewById(R.id.btn_settings)
+    }
+
     // ---------------------------------------------------------------- настройки
 
     private fun restoreSettings() {
@@ -277,10 +314,12 @@ class PlayerActivity : ComponentActivity() {
         shiftMode = p.getInt("shift_mode", 0)
         speedIndex = p.getInt("speed", 2).coerceIn(0, SPEEDS.size - 1)
         aspectIndex = p.getInt("aspect", 0).coerceIn(0, ASPECTS.size - 1)
+        screenIndex = p.getInt("screen", 0).coerceIn(0, SCREEN_IN.size - 1)
         clockSize = p.getInt("clock_size", 0).coerceIn(0, CLOCK_SP.size - 1)
         clockDim = p.getInt("clock_dim", 2).coerceIn(0, CLOCK_ALPHA.size - 1)
         recDelayIndex = p.getInt("rec_delay", 0).coerceIn(0, REC_DELAYS.size - 1)
         recDurIndex = p.getInt("rec_dur", 0).coerceIn(0, REC_DURATIONS.size - 1)
+        snoozeIndex = p.getInt("snooze", 2).coerceIn(0, SNOOZE_SEC.size - 1)
         recDirIndex = p.getInt("rec_dir", 0).coerceIn(0, recDirs().size - 1)
     }
 
@@ -335,7 +374,7 @@ class PlayerActivity : ComponentActivity() {
                 onVideoGeometryChanged(videoSize)
 
             override fun onTracksChanged(tracks: Tracks) {
-                if (barActive) refreshAllRows()
+                if (sideScroll.visibility == View.VISIBLE) refreshAllRows()
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -444,13 +483,22 @@ class PlayerActivity : ComponentActivity() {
         val limit = root.height / 2f
         shiftPx = shiftPx.coerceIn(-limit, limit)
         playerView.translationY = shiftPx
-        // Пиксели нужны только ручному режиму, режим — всем остальным.
         if (shiftMode == 3) prefs?.edit()?.putFloat(aspectKey, shiftPx)?.apply()
         saveInt("shift_mode", shiftMode)
         if (showHud) showHud()
     }
 
     private fun edgeShift() = (safeMarginPx - EDGE_GUARD_PX).coerceAtLeast(0f)
+
+    private fun setShiftMode(mode: Int) {
+        shiftMode = mode
+        shiftPx = when (mode) {
+            1 -> -edgeShift()
+            2 -> edgeShift()
+            else -> 0f
+        }
+        applyShift(showHud = true)
+    }
 
     private fun showHud() {
         val cropping = abs(shiftPx) > safeMarginPx + 0.5f
@@ -465,54 +513,174 @@ class PlayerActivity : ComponentActivity() {
         ui.postDelayed(hideHud, 2_000L)
     }
 
-    // ---------------------------------------------------------------- side bar
+    /** Уменьшение картинки под меньшую диагональ. */
+    private fun applyScreenSize() {
+        val inches = SCREEN_IN[screenIndex]
+        val scale = if (inches == 0) 1f else inches.toFloat() / BASE_DIAGONAL_IN
+        playerView.scaleX = scale
+        playerView.scaleY = scale
+    }
+
+    // ------------------------------------------------------------- панель действий
+
+    private fun wireActions() {
+        btnLibrary.setOnClickListener { toggleDrawer() }
+        btnRecord.setOnClickListener { onRecordPressed() }
+        btnRecPause.setOnClickListener { toggleRecPause() }
+        btnRecSnooze.setOnClickListener { snoozeRecording() }
+        btnRecStop.setOnClickListener { stopRecording() }
+        btnQuality.setOnClickListener { openQualityPopup() }
+        btnShift.setOnClickListener { openShiftPopup() }
+        btnSettings.setOnClickListener { toggleSidePanel() }
+        syncRecordButtons()
+    }
+
+    /** Любое нажатие поднимает панель действий и продлевает ей жизнь. */
+    private fun showUi(focus: Boolean) {
+        actionBar.visibility = View.VISIBLE
+        leftTop.visibility = View.VISIBLE
+        if (focus && !hasPanelFocus()) btnRecord.requestFocus()
+        keepUiAlive()
+    }
+
+    private fun keepUiAlive() {
+        ui.removeCallbacks(hideUi)
+        ui.postDelayed(hideUi, UI_TIMEOUT_MS)
+    }
+
+    private fun hasPanelFocus(): Boolean {
+        val f = currentFocus ?: return false
+        return f.isDescendantOf(actionBar) || f.isDescendantOf(popup) ||
+            f.isDescendantOf(sideBar) || f.isDescendantOf(drawer) ||
+            f === btnLibrary
+    }
+
+    private fun View.isDescendantOf(group: ViewGroup): Boolean {
+        var p: View? = this
+        while (p != null) {
+            if (p === group) return true
+            p = p.parent as? View
+        }
+        return false
+    }
+
+    private fun hideAllPanels() {
+        // Открытые списки не закрываем по таймауту: человек их читает.
+        if (drawer.visibility == View.VISIBLE || sideScroll.visibility == View.VISIBLE) {
+            keepUiAlive()
+            return
+        }
+        popup.visibility = View.GONE
+        popup.removeAllViews()
+        actionBar.visibility = View.GONE
+        if (!recorder.isRecording) leftTop.visibility = View.GONE
+    }
+
+    // ------------------------------------------------------------- всплывашки
+
+    /** Меню НАД кнопкой: три иконки для сдвига, три пункта для качества. */
+    private fun openPopup(views: List<View>) {
+        popup.removeAllViews()
+        views.forEach { popup.addView(it) }
+        popup.visibility = View.VISIBLE
+        views.firstOrNull()?.requestFocus()
+        keepUiAlive()
+    }
+
+    private fun popupIcon(iconRes: Int, label: String, action: () -> Unit): View {
+        val row = LayoutInflater.from(this).inflate(R.layout.row_control, popup, false)
+        row.findViewById<ImageView>(R.id.row_icon).setImageResource(iconRes)
+        row.findViewById<TextView>(R.id.row_label).text = label
+        row.setOnClickListener {
+            action()
+            popup.visibility = View.GONE
+            popup.removeAllViews()
+            actionBar.requestFocus()
+            keepUiAlive()
+        }
+        return row
+    }
+
+    private fun openShiftPopup() {
+        openPopup(
+            listOf(
+                popupIcon(R.drawable.ic_arrow_up, getString(R.string.shift_top)) {
+                    setShiftMode(1)
+                },
+                popupIcon(R.drawable.ic_arrow_center, getString(R.string.shift_center)) {
+                    setShiftMode(0)
+                },
+                popupIcon(R.drawable.ic_arrow_down, getString(R.string.shift_bottom)) {
+                    setShiftMode(2)
+                }
+            )
+        )
+    }
+
+    private fun openQualityPopup() {
+        val views = ArrayList<View>()
+        views.add(popupIcon(R.drawable.ic_quality, getString(R.string.val_max)) {
+            setQuality(0)
+        })
+        views.add(popupIcon(R.drawable.ic_quality, getString(R.string.val_auto)) {
+            setQuality(1)
+        })
+        flatTracks(C.TRACK_TYPE_VIDEO).forEachIndexed { i, (g, t) ->
+            views.add(
+                popupIcon(R.drawable.ic_quality, videoLabel(g.getTrackFormat(t))) {
+                    setQuality(2 + i)
+                }
+            )
+        }
+        openPopup(views)
+    }
+
+    // ------------------------------------------------------------ панель настроек
+
+    private fun toggleSidePanel() {
+        if (sideScroll.visibility == View.VISIBLE) {
+            sideScroll.visibility = View.GONE
+            btnSettings.requestFocus()
+        } else {
+            drawer.visibility = View.GONE
+            refreshAllRows()
+            sideScroll.visibility = View.VISIBLE
+            rowViews.firstOrNull()?.requestFocus()
+        }
+        keepUiAlive()
+    }
 
     private fun buildSideBar() {
         val inflater = LayoutInflater.from(this)
         val icons = intArrayOf(
-            R.drawable.ic_shift,
-            R.drawable.ic_quality,
             R.drawable.ic_audio,
             R.drawable.ic_subs,
             R.drawable.ic_speed,
             R.drawable.ic_aspect,
+            R.drawable.ic_screen,
+            R.drawable.ic_shift,
             R.drawable.ic_clock,
             R.drawable.ic_clock_dim,
-            R.drawable.ic_record,
             R.drawable.ic_timer,
             R.drawable.ic_duration,
+            R.drawable.ic_pause_timed,
             R.drawable.ic_folder
         )
         for (i in 0 until ROW_COUNT) {
             val row = inflater.inflate(R.layout.row_control, sideBar, false)
             row.findViewById<ImageView>(R.id.row_icon).setImageResource(icons[i])
+            row.setOnKeyListener { _, code, event ->
+                if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                when (code) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> { stepRow(i, -1, event.repeatCount > 4); true }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> { stepRow(i, 1, event.repeatCount > 4); true }
+                    else -> false
+                }
+            }
+            row.setOnClickListener { stepRow(i, 1, false) }
             rowViews.add(row)
             rowLabels.add(row.findViewById(R.id.row_label))
             sideBar.addView(row)
-        }
-    }
-
-    private fun setBarVisible(visible: Boolean) {
-        barActive = visible
-        if (!visible) manualShift = false
-        sideScroll.visibility = if (visible) View.VISIBLE else View.GONE
-        ui.removeCallbacks(hideBar)
-        if (visible) {
-            refreshAllRows()
-            scrollToRow()
-            ui.postDelayed(hideBar, UI_TIMEOUT_MS)
-        }
-    }
-
-    private fun keepBarAlive() {
-        ui.removeCallbacks(hideBar)
-        ui.postDelayed(hideBar, UI_TIMEOUT_MS)
-    }
-
-    private fun scrollToRow() {
-        val v = rowViews[barRow]
-        sideScroll.post {
-            sideScroll.smoothScrollTo(0, v.top - (sideScroll.height - v.height) / 2)
         }
     }
 
@@ -521,44 +689,27 @@ class PlayerActivity : ComponentActivity() {
     }
 
     private fun refreshRow(i: Int) {
-        val selected = i == barRow
-        rowViews[i].setBackgroundResource(if (selected) R.drawable.row_selected else 0)
-        rowLabels[i].visibility = if (selected) View.VISIBLE else View.GONE
-        if (selected) {
-            rowLabels[i].text = getString(R.string.row_label, rowTitle(i), rowValue(i))
-        }
-    }
-
-    private fun moveRow(delta: Int) {
-        manualShift = false
-        val prev = barRow
-        barRow = (barRow + delta + ROW_COUNT) % ROW_COUNT
-        refreshRow(prev)
-        refreshRow(barRow)
-        scrollToRow()
-        keepBarAlive()
+        rowLabels[i].text = getString(R.string.row_label, rowTitle(i), rowValue(i))
     }
 
     private fun rowTitle(i: Int): String = getString(
         when (i) {
-            ROW_SHIFT -> R.string.ctl_shift
-            ROW_QUALITY -> R.string.ctl_quality
             ROW_AUDIO -> R.string.ctl_audio
             ROW_SUBS -> R.string.ctl_subs
             ROW_SPEED -> R.string.ctl_speed
             ROW_ASPECT -> R.string.ctl_aspect
+            ROW_SCREEN -> R.string.ctl_screen
+            ROW_SHIFT_MANUAL -> R.string.shift_manual
             ROW_CLOCK -> R.string.ctl_clock
             ROW_CLOCK_DIM -> R.string.ctl_clock_dim
-            ROW_RECORD -> R.string.ctl_record
             ROW_REC_DELAY -> R.string.ctl_rec_delay
             ROW_REC_DUR -> R.string.ctl_rec_dur
+            ROW_SNOOZE -> R.string.ctl_snooze
             else -> R.string.ctl_rec_dir
         }
     )
 
     private fun rowValue(i: Int): String = when (i) {
-        ROW_SHIFT -> shiftValue()
-        ROW_QUALITY -> qualityValue()
         ROW_AUDIO -> trackValue(C.TRACK_TYPE_AUDIO, audioIndex)
         ROW_SUBS -> if (subsIndex == 0) getString(R.string.val_off)
         else trackValue(C.TRACK_TYPE_TEXT, subsIndex - 1)
@@ -570,6 +721,9 @@ class PlayerActivity : ComponentActivity() {
                 else -> R.string.aspect_zoom
             }
         )
+        ROW_SCREEN -> if (SCREEN_IN[screenIndex] == 0) getString(R.string.screen_full)
+        else getString(R.string.screen_inches, SCREEN_IN[screenIndex])
+        ROW_SHIFT_MANUAL -> getString(R.string.val_px, shiftPx.roundToInt())
         ROW_CLOCK -> when (clockSize) {
             0 -> getString(R.string.val_off)
             1 -> getString(R.string.clock_small)
@@ -579,30 +733,16 @@ class PlayerActivity : ComponentActivity() {
         ROW_CLOCK_DIM -> getString(
             R.string.val_percent, (CLOCK_ALPHA[clockDim] * 100).roundToInt()
         )
-        ROW_RECORD -> recordValue()
         ROW_REC_DELAY -> delayValue()
         ROW_REC_DUR -> if (REC_DURATIONS[recDurIndex] == 0)
             getString(R.string.rec_unlimited)
         else getString(R.string.val_minutes, REC_DURATIONS[recDurIndex])
+        ROW_SNOOZE -> fmtMinSec(SNOOZE_SEC[snoozeIndex])
         else -> dirLabel(recDirIndex)
     }
 
-    /** Влево/вправо на выбранном ряду. Панель остаётся открытой. */
-    private fun stepRow(dir: Int, fast: Boolean) {
-        when (barRow) {
-            ROW_SHIFT -> {
-                // Влево/вправо перебирают режимы, сам кадр тут не двигается.
-                manualShift = false
-                shiftMode = (shiftMode + dir + 4) % 4
-                when (shiftMode) {
-                    1 -> shiftPx = -edgeShift()
-                    2 -> shiftPx = edgeShift()
-                    3 -> manualShift = true
-                    else -> shiftPx = 0f
-                }
-                applyShift(showHud = false)
-            }
-            ROW_QUALITY -> stepQuality(dir)
+    private fun stepRow(i: Int, dir: Int, fast: Boolean) {
+        when (i) {
             ROW_AUDIO -> stepTrack(C.TRACK_TYPE_AUDIO, dir)
             ROW_SUBS -> stepTrack(C.TRACK_TYPE_TEXT, dir)
             ROW_SPEED -> {
@@ -615,6 +755,16 @@ class PlayerActivity : ComponentActivity() {
                 playerView.resizeMode = ASPECTS[aspectIndex]
                 saveInt("aspect", aspectIndex)
             }
+            ROW_SCREEN -> {
+                screenIndex = (screenIndex + dir + SCREEN_IN.size) % SCREEN_IN.size
+                saveInt("screen", screenIndex)
+                applyScreenSize()
+            }
+            ROW_SHIFT_MANUAL -> {
+                shiftMode = 3
+                shiftPx += dir * (if (fast) 24f else 4f)
+                applyShift(showHud = true)
+            }
             ROW_CLOCK -> {
                 clockSize = (clockSize + dir + CLOCK_SP.size) % CLOCK_SP.size
                 saveInt("clock_size", clockSize)
@@ -625,7 +775,6 @@ class PlayerActivity : ComponentActivity() {
                 saveInt("clock_dim", clockDim)
                 applyClockStyle()
             }
-            ROW_RECORD -> toggleRecording()
             ROW_REC_DELAY -> {
                 recDelayIndex = (recDelayIndex + dir + REC_DELAYS.size) % REC_DELAYS.size
                 saveInt("rec_delay", recDelayIndex)
@@ -634,99 +783,18 @@ class PlayerActivity : ComponentActivity() {
                 recDurIndex = (recDurIndex + dir + REC_DURATIONS.size) % REC_DURATIONS.size
                 saveInt("rec_dur", recDurIndex)
             }
+            ROW_SNOOZE -> {
+                snoozeIndex = (snoozeIndex + dir + SNOOZE_SEC.size) % SNOOZE_SEC.size
+                saveInt("snooze", snoozeIndex)
+            }
             ROW_REC_DIR -> {
                 val n = recDirs().size
                 recDirIndex = (recDirIndex + dir + n) % n
                 saveInt("rec_dir", recDirIndex)
             }
         }
-        refreshRow(barRow)
-        keepBarAlive()
-    }
-
-    /** OK на выбранном ряду. */
-    private fun activateRow() {
-        when (barRow) {
-            ROW_SHIFT -> {
-                manualShift = !manualShift
-                if (manualShift) {
-                    shiftMode = 3
-                    applyShift(showHud = false)
-                }
-            }
-            ROW_RECORD -> toggleRecording()
-            else -> stepRow(1, fast = false)
-        }
-        refreshRow(barRow)
-        keepBarAlive()
-    }
-
-    private fun shiftValue(): String {
-        if (manualShift) return getString(R.string.shift_manual_on, shiftPx.roundToInt())
-        if (shiftMode == 3) return getString(R.string.shift_manual)
-        val edge = edgeShift()
-        return when {
-            abs(shiftPx) < 0.5f -> getString(R.string.shift_center)
-            edge > 0.5f && abs(shiftPx + edge) < 0.5f -> getString(R.string.shift_top)
-            edge > 0.5f && abs(shiftPx - edge) < 0.5f -> getString(R.string.shift_bottom)
-            else -> getString(R.string.val_px, shiftPx.roundToInt())
-        }
-    }
-
-    private fun nudgeShift(dir: Int, fast: Boolean) {
-        shiftPx += dir * (if (fast) 24f else 4f)
-        applyShift(showHud = false)
-        refreshRow(ROW_SHIFT)
-        keepBarAlive()
-    }
-
-    // -------------------------------------------------------------- оформление
-
-    /**
-     * Приводит панель Media3 к стилю проекта.
-     *
-     * Цвета полосы прокрутки заданы атрибутами внутри библиотечной вёрстки,
-     * поэтому меняем их в рантайме через сеттеры DefaultTimeBar — это
-     * надёжнее, чем подменять весь exo_player_control_view.xml своим.
-     */
-    private fun styleControls() {
-        // Плейлиста нет — кнопки «предыдущий/следующий» только мешают.
-        playerView.setShowPreviousButton(false)
-        playerView.setShowNextButton(false)
-        playerView.setShowRewindButton(true)
-        playerView.setShowFastForwardButton(true)
-
-        // Шестерёнка Media3 открывает нашу панель настроек.
-        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_settings)
-            ?.setOnClickListener { setBarVisible(true) }
-
-        val accent = ContextCompat.getColor(this, R.color.brand_accent)
-        val text = ContextCompat.getColor(this, R.color.brand_text)
-
-        playerView.findViewById<DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.apply {
-            // Шаг стрелок по самой полосе — крупный, кнопки остаются мелкими.
-            setKeyTimeIncrement(SEEK_BAR_MS)
-            setPlayedColor(accent)
-            setScrubberColor(accent)
-            setBufferedColor(ContextCompat.getColor(this@PlayerActivity, R.color.brand_buffered))
-            setUnplayedColor(ContextCompat.getColor(this@PlayerActivity, R.color.brand_unplayed))
-        }
-
-        // Красим только сам контроллер, чтобы не задеть субтитры и буферизацию.
-        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_controller)
-            ?.let { tintTree(it, text) }
-
-        // Кнопка воспроизведения — акцентная, чтобы глаз цеплялся за неё.
-        playerView.findViewById<ImageView>(androidx.media3.ui.R.id.exo_play_pause)
-            ?.setColorFilter(accent)
-    }
-
-    private fun tintTree(v: View, color: Int) {
-        when (v) {
-            is ViewGroup -> for (i in 0 until v.childCount) tintTree(v.getChildAt(i), color)
-            is ImageView -> v.setColorFilter(color)
-            is TextView -> v.setTextColor(color)
-        }
+        refreshRow(i)
+        keepUiAlive()
     }
 
     // ------------------------------------------------------------------- часы
@@ -740,6 +808,48 @@ class PlayerActivity : ComponentActivity() {
         clock.textSize = CLOCK_SP[clockSize]
         clock.alpha = CLOCK_ALPHA[clockDim]
         clock.text = clockFmt.format(Date())
+    }
+
+    // -------------------------------------------------------------- оформление
+
+    /**
+     * Приводит панель Media3 к стилю проекта.
+     *
+     * Цвета полосы заданы атрибутами внутри библиотечной вёрстки, поэтому
+     * меняем их сеттерами DefaultTimeBar — это надёжнее, чем подменять
+     * exo_player_control_view.xml своей копией.
+     */
+    private fun styleControls() {
+        playerView.setShowPreviousButton(false)
+        playerView.setShowNextButton(false)
+        playerView.setShowRewindButton(true)
+        playerView.setShowFastForwardButton(true)
+
+        val accent = ContextCompat.getColor(this, R.color.brand_accent)
+        val text = ContextCompat.getColor(this, R.color.brand_text)
+
+        playerView.findViewById<DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.apply {
+            // Шаг стрелок по самой полосе — крупный, кнопки остаются мелкими.
+            setKeyTimeIncrement(SEEK_BAR_MS)
+            setPlayedColor(accent)
+            setScrubberColor(accent)
+            setBufferedColor(ContextCompat.getColor(this@PlayerActivity, R.color.brand_buffered))
+            setUnplayedColor(ContextCompat.getColor(this@PlayerActivity, R.color.brand_unplayed))
+        }
+
+        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_controller)
+            ?.let { tintTree(it, text) }
+
+        playerView.findViewById<ImageView>(androidx.media3.ui.R.id.exo_play_pause)
+            ?.setColorFilter(accent)
+    }
+
+    private fun tintTree(v: View, color: Int) {
+        when (v) {
+            is ViewGroup -> for (i in 0 until v.childCount) tintTree(v.getChildAt(i), color)
+            is ImageView -> v.setColorFilter(color)
+            is TextView -> v.setTextColor(color)
+        }
     }
 
     // ------------------------------------------------------------------ tracks
@@ -792,30 +902,22 @@ class PlayerActivity : ComponentActivity() {
      * кадр своим скейлером. Смысл в том, чтобы взять лучший из вариантов,
      * которые отдаёт провайдер.
      */
-    private fun qualityValue(): String {
-        if (qualityIndex == 0) return getString(R.string.val_max)
-        if (qualityIndex == 1) return getString(R.string.val_auto)
-        val list = flatTracks(C.TRACK_TYPE_VIDEO)
-        val at = qualityIndex - 2
-        if (at !in list.indices) return getString(R.string.val_max)
-        val (g, i) = list[at]
-        return videoLabel(g.getTrackFormat(i))
-    }
-
-    private fun stepQuality(dir: Int) {
+    private fun setQuality(index: Int) {
         val p = player ?: return
-        val size = 2 + flatTracks(C.TRACK_TYPE_VIDEO).size
-        qualityIndex = (qualityIndex + dir + size) % size
-
+        qualityIndex = index
         val params = p.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
-        when (qualityIndex) {
+        when (index) {
             0 -> params.setForceHighestSupportedBitrate(true)
             1 -> params.setForceHighestSupportedBitrate(false)
             else -> {
-                val (g, i) = flatTracks(C.TRACK_TYPE_VIDEO)[qualityIndex - 2]
-                params.setForceHighestSupportedBitrate(false)
-                    .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, i))
+                val list = flatTracks(C.TRACK_TYPE_VIDEO)
+                val at = index - 2
+                if (at in list.indices) {
+                    val (g, i) = list[at]
+                    params.setForceHighestSupportedBitrate(false)
+                        .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, i))
+                }
             }
         }
         p.trackSelectionParameters = params.build()
@@ -837,12 +939,6 @@ class PlayerActivity : ComponentActivity() {
 
     // --------------------------------------------------------------- recording
 
-    /**
-     * Каталоги для записи: нулевой — внутренняя память, дальше съёмные.
-     *
-     * getExternalFilesDirs отдаёт каталоги приложения на всех томах, включая
-     * USB-флешку. Разрешения для них не нужны — это своя песочница.
-     */
     private fun recDirs(): List<File> {
         val dirs = getExternalFilesDirs(Environment.DIRECTORY_MOVIES)
             .filterNotNull()
@@ -855,29 +951,15 @@ class PlayerActivity : ComponentActivity() {
         if (index == 0) getString(R.string.dir_internal)
         else getString(R.string.dir_removable, index)
 
-    private fun recordValue(): String {
-        if (recorder.isRecording) {
-            val size = fmtSize(recorder.bytesWritten)
-            if (recStopAt == 0L) return size
-            return getString(R.string.rec_left, size, fmtClock(recStopAt - now()))
-        }
-        if (recStartAt > 0L) {
-            return getString(R.string.rec_armed, fmtClock(recStartAt - now()))
-        }
-        return getString(R.string.val_off)
-    }
-
     private fun delayValue(): String {
         val min = REC_DELAYS[recDelayIndex]
         if (min == 0) return getString(R.string.rec_now)
-        val at = clockFmt.format(Date(now() + min * 60_000L))
+        val at = clockFmt.format(Date(System.currentTimeMillis() + min * 60_000L))
         return getString(R.string.rec_at, at, min)
     }
 
-    /** OK на ряду «Запись»: пуск, отмена отсрочки или остановка. */
-    private fun toggleRecording() {
+    private fun onRecordPressed() {
         when {
-            recorder.isRecording -> stopRecording()
             recStartAt > 0L -> {
                 recStartAt = 0L
                 recBadge.visibility = View.GONE
@@ -889,14 +971,13 @@ class PlayerActivity : ComponentActivity() {
     }
 
     private fun armRecording() {
-        val at = now() + REC_DELAYS[recDelayIndex] * 60_000L
+        val at = System.currentTimeMillis() + REC_DELAYS[recDelayIndex] * 60_000L
         recStartAt = at
         recDot.alpha = 0.45f
         recBadge.visibility = View.VISIBLE
         refreshRecBadge()
         Toast.makeText(
-            this,
-            getString(R.string.rec_scheduled, clockFmt.format(Date(at))),
+            this, getString(R.string.rec_scheduled, clockFmt.format(Date(at))),
             Toast.LENGTH_LONG
         ).show()
     }
@@ -909,20 +990,43 @@ class PlayerActivity : ComponentActivity() {
             return
         }
         val dur = REC_DURATIONS[recDurIndex]
-        recStopAt = if (dur > 0) now() + dur * 60_000L else 0L
+        recStopAt = if (dur > 0) System.currentTimeMillis() + dur * 60_000L else 0L
+        recResumeAt = 0L
         recDot.alpha = 1f
         recBadge.visibility = View.VISIBLE
+        leftTop.visibility = View.VISIBLE
         refreshRecBadge()
+        syncRecordButtons()
         Toast.makeText(
             this, getString(R.string.rec_started, target.name), Toast.LENGTH_LONG
         ).show()
     }
 
+    private fun toggleRecPause() {
+        recorder.isPaused = !recorder.isPaused
+        recResumeAt = 0L
+        syncRecordButtons()
+        refreshRecBadge()
+        keepUiAlive()
+    }
+
+    /** Пауза на заданное время — чтобы вырезать рекламный блок. */
+    private fun snoozeRecording() {
+        recorder.isPaused = true
+        recResumeAt = System.currentTimeMillis() + SNOOZE_SEC[snoozeIndex] * 1_000L
+        syncRecordButtons()
+        refreshRecBadge()
+        keepUiAlive()
+    }
+
     private fun stopRecording() {
         val written = recorder.bytesWritten
-        val target = recorder.stop() ?: return
+        val target = recorder.stop()
         recStopAt = 0L
+        recResumeAt = 0L
         recBadge.visibility = View.GONE
+        syncRecordButtons()
+        if (target == null) return
         if (written == 0L) {
             target.delete()
             Toast.makeText(this, R.string.rec_empty, Toast.LENGTH_LONG).show()
@@ -935,16 +1039,165 @@ class PlayerActivity : ComponentActivity() {
         ).show()
     }
 
-    private fun refreshRecBadge() {
-        recSize.text = recordValue()
+    /** Одна кнопка «запись» превращается в три: пауза, пауза на время, стоп. */
+    private fun syncRecordButtons() {
+        val on = recorder.isRecording
+        btnRecord.visibility = if (on) View.GONE else View.VISIBLE
+        btnRecPause.visibility = if (on) View.VISIBLE else View.GONE
+        btnRecSnooze.visibility = if (on) View.VISIBLE else View.GONE
+        btnRecStop.visibility = if (on) View.VISIBLE else View.GONE
+        btnRecPause.setImageResource(
+            if (recorder.isPaused) R.drawable.ic_record else R.drawable.ic_pause
+        )
+        btnRecPause.contentDescription = getString(
+            if (recorder.isPaused) R.string.rec_resume else R.string.rec_pause
+        )
+        btnRecSnooze.contentDescription =
+            getString(R.string.rec_snooze, fmtMinSec(SNOOZE_SEC[snoozeIndex]))
+
+        // Фокус не должен провалиться на скрытую кнопку.
+        if (currentFocus?.visibility == View.GONE) {
+            (if (on) btnRecPause else btnRecord).requestFocus()
+        }
     }
 
-    private fun now() = System.currentTimeMillis()
+    private fun refreshRecBadge() {
+        recSize.text = when {
+            recStartAt > 0L ->
+                getString(R.string.rec_armed, fmtClock(recStartAt - System.currentTimeMillis()))
+            recResumeAt > 0L -> getString(
+                R.string.rec_snoozed, fmtClock(recResumeAt - System.currentTimeMillis())
+            )
+            recorder.isPaused -> getString(R.string.rec_paused)
+            recStopAt > 0L -> getString(
+                R.string.rec_left, fmtSize(recorder.bytesWritten),
+                fmtClock(recStopAt - System.currentTimeMillis())
+            )
+            else -> fmtSize(recorder.bytesWritten)
+        }
+    }
+
+    // ------------------------------------------------------------ ящик записей
+
+    private val drawerAdapter = object : BaseAdapter() {
+        override fun getCount() = recordings.size
+        override fun getItem(position: Int) = recordings[position]
+        override fun getItemId(position: Int) = position.toLong()
+
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            val f = recordings[position]
+            val v = convertView
+                ?: LayoutInflater.from(this@PlayerActivity)
+                    .inflate(R.layout.row_recording, parent, false)
+
+            v.findViewById<TextView>(R.id.rec_title).text = f.name
+            v.findViewById<TextView>(R.id.rec_meta).text = getString(
+                R.string.lib_rec_meta, fmtSize(f.length()), stampFmt.format(Date(f.lastModified()))
+            )
+
+            val thumb = v.findViewById<ImageView>(R.id.rec_thumb)
+            val cached = thumbs[f.absolutePath]
+            if (cached != null) thumb.setImageBitmap(cached)
+            else {
+                thumb.setImageResource(R.drawable.ic_video)
+                loadThumb(f, thumb)
+            }
+
+            v.findViewById<View>(R.id.rec_row).setOnClickListener { playFile(f) }
+            v.findViewById<View>(R.id.rec_delete).setOnClickListener { confirmDelete(f) }
+            return v
+        }
+    }
+
+    /** Кадр из записи в фоне: MediaMetadataRetriever блокирует поток. */
+    private fun loadThumb(f: File, target: ImageView) {
+        val path = f.absolutePath
+        if (thumbs.containsKey(path)) return
+        thumbs[path] = null
+        Thread {
+            var bmp: Bitmap? = null
+            val mmr = MediaMetadataRetriever()
+            try {
+                mmr.setDataSource(path)
+                bmp = mmr.getFrameAtTime(3_000_000L)
+            } catch (e: Exception) {
+                // Битый или зашифрованный файл — оставим иконку.
+            } finally {
+                try {
+                    mmr.release()
+                } catch (ignored: Exception) {
+                }
+            }
+            val result = bmp
+            ui.post {
+                thumbs[path] = result
+                if (result != null && target.isAttachedToWindow) {
+                    target.setImageBitmap(result)
+                }
+            }
+        }.start()
+    }
+
+    private fun toggleDrawer() {
+        if (drawer.visibility == View.VISIBLE) {
+            drawer.visibility = View.GONE
+            btnLibrary.requestFocus()
+        } else {
+            sideScroll.visibility = View.GONE
+            reloadRecordings()
+            drawer.visibility = View.VISIBLE
+            drawerList.requestFocus()
+        }
+        keepUiAlive()
+    }
+
+    private fun reloadRecordings() {
+        recordings.clear()
+        // Новые сверху — так просил владелец.
+        recordings.addAll(
+            recDirs()
+                .flatMap { it.listFiles()?.toList() ?: emptyList() }
+                .filter { it.isFile && it.name.endsWith(".ts", ignoreCase = true) }
+                .sortedByDescending { it.lastModified() }
+        )
+        if (drawerList.adapter == null) drawerList.adapter = drawerAdapter
+        drawerAdapter.notifyDataSetChanged()
+        drawerEmpty.visibility = if (recordings.isEmpty()) View.VISIBLE else View.GONE
+    }
+
+    private fun playFile(f: File) {
+        drawer.visibility = View.GONE
+        startPlayback(Uri.fromFile(f))
+    }
+
+    private fun confirmDelete(f: File) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.del_title)
+            .setMessage(getString(R.string.del_message, f.name, fmtSize(f.length())))
+            .setNegativeButton(R.string.del_cancel, null)
+            .setPositiveButton(R.string.del_ok) { _, _ ->
+                if (f.delete()) {
+                    thumbs.remove(f.absolutePath)
+                    Toast.makeText(this, R.string.del_done, Toast.LENGTH_SHORT).show()
+                    reloadRecordings()
+                } else {
+                    Toast.makeText(this, R.string.del_failed, Toast.LENGTH_LONG).show()
+                }
+            }
+            .setOnDismissListener { goFullscreen() }
+            .show()
+    }
+
+    // ----------------------------------------------------------------- формат
 
     private fun fmtClock(ms: Long): String {
         val total = (ms.coerceAtLeast(0L) / 1000L).toInt()
         return String.format(Locale.US, "%d:%02d", total / 60, total % 60)
     }
+
+    private fun fmtMinSec(sec: Int): String =
+        if (sec % 60 == 0) getString(R.string.val_minutes, sec / 60)
+        else String.format(Locale.US, "%d:%02d", sec / 60, sec % 60)
 
     private fun fmtSize(bytes: Long): String = when {
         bytes >= 1L shl 30 ->
@@ -962,63 +1215,37 @@ class PlayerActivity : ComponentActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
 
-        val code = event.keyCode
-
-        // Ручной сдвиг забирает вертикальные стрелки себе.
-        if (barActive && manualShift) {
-            when (code) {
-                KeyEvent.KEYCODE_DPAD_UP -> {
-                    nudgeShift(-1, event.repeatCount > 4); return true
-                }
-                KeyEvent.KEYCODE_DPAD_DOWN -> {
-                    nudgeShift(1, event.repeatCount > 4); return true
-                }
-                KeyEvent.KEYCODE_DPAD_LEFT -> { stepRow(-1, false); return true }
-                KeyEvent.KEYCODE_DPAD_RIGHT -> { stepRow(1, false); return true }
-                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
-                KeyEvent.KEYCODE_BACK -> {
-                    manualShift = false
-                    refreshRow(ROW_SHIFT)
-                    keepBarAlive()
+        // BACK закрывает открытое, а не выходит из плеера.
+        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+            when {
+                popup.visibility == View.VISIBLE -> {
+                    popup.visibility = View.GONE
+                    popup.removeAllViews()
+                    btnShift.requestFocus()
                     return true
                 }
+                drawer.visibility == View.VISIBLE -> { toggleDrawer(); return true }
+                sideScroll.visibility == View.VISIBLE -> { toggleSidePanel(); return true }
+                actionBar.visibility == View.VISIBLE -> { hideAllPanels(); return true }
             }
         }
 
-        // Панель настроек открыта — стрелки её и обслуживают.
-        if (barActive) {
-            when (code) {
-                KeyEvent.KEYCODE_DPAD_UP -> { moveRow(-1); return true }
-                KeyEvent.KEYCODE_DPAD_DOWN -> { moveRow(1); return true }
-                KeyEvent.KEYCODE_DPAD_LEFT -> {
-                    stepRow(-1, event.repeatCount > 4); return true
-                }
-                KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                    stepRow(1, event.repeatCount > 4); return true
-                }
-                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                    activateRow(); return true
-                }
-                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_MENU -> {
-                    setBarVisible(false); return true
-                }
-            }
-            keepBarAlive()
-            return super.dispatchKeyEvent(event)
+        if (event.keyCode == KeyEvent.KEYCODE_MENU || event.keyCode == KeyEvent.KEYCODE_SETTINGS) {
+            showUi(focus = true)
+            return true
         }
 
-        // Закрыта: MENU и «вправо» открывают её — панель настроек справа.
-        when (code) {
-            KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_SETTINGS -> {
-                setBarVisible(true); return true
-            }
-            KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                if (!playerView.isControllerFullyVisible) {
-                    setBarVisible(true); return true
-                }
-            }
+        // Панель скрыта — первое нажатие только поднимает её.
+        if (actionBar.visibility != View.VISIBLE) {
+            showUi(focus = true)
+            if (event.keyCode == KeyEvent.KEYCODE_DPAD_UP ||
+                event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN ||
+                event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT ||
+                event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+            ) return true
+        } else {
+            keepUiAlive()
         }
-        if (!playerView.isControllerFullyVisible) playerView.showController()
         return super.dispatchKeyEvent(event)
     }
 
