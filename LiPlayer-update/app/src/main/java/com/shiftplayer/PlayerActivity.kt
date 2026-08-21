@@ -3,6 +3,7 @@ package com.shiftplayer
 import android.app.AlertDialog
 import android.content.SharedPreferences
 import android.net.Uri
+import android.os.Environment
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -28,8 +29,10 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.TeeDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -71,6 +74,13 @@ class PlayerActivity : ComponentActivity() {
     private var aspectKey = "shift_default"
 
     private var resizeIndex = 0
+
+    /** Пишет сетевые байты в файл параллельно воспроизведению. */
+    private val recorder by lazy {
+        StreamRecorder(
+            getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
+        )
+    }
 
     private val hudHandler = Handler(Looper.getMainLooper())
     private val hideHud = Runnable { hud.visibility = View.GONE }
@@ -136,7 +146,11 @@ class PlayerActivity : ComponentActivity() {
             .setConnectTimeoutMs(20_000)
             .setReadTimeoutMs(20_000)
 
-        val sources = DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http))
+        // Tee дублирует прочитанные байты в рекордер. Пока запись выключена,
+        // рекордер просто выбрасывает их, накладных расходов нет.
+        val base = DefaultDataSource.Factory(this, http)
+        val tee = DataSource.Factory { TeeDataSource(base.createDataSource(), recorder) }
+        val sources = DefaultMediaSourceFactory(tee)
 
         // EXTENSION_RENDERER_MODE_PREFER — задействовать доп. декодеры, если есть.
         val renderers = DefaultRenderersFactory(this)
@@ -225,6 +239,7 @@ class PlayerActivity : ComponentActivity() {
     }
 
     private fun releasePlayer() {
+        if (recorder.isRecording) stopRecording()
         playerView.player = null
         player?.release()
         player = null
@@ -325,12 +340,19 @@ class PlayerActivity : ComponentActivity() {
 
     /** Единое меню: звуковая дорожка, субтитры, скорость, сдвиг кадра. */
     private fun openSettings() {
+        val recLabel = if (recorder.isRecording) {
+            getString(R.string.menu_rec_stop, formatSize(recorder.bytesWritten))
+        } else {
+            getString(R.string.menu_rec_start)
+        }
         val items = arrayOf(
             getString(R.string.menu_shift),
             getString(R.string.menu_audio),
             getString(R.string.menu_subs),
+            getString(R.string.menu_quality),
             getString(R.string.menu_speed),
-            getString(R.string.menu_resize)
+            getString(R.string.menu_resize),
+            recLabel
         )
         AlertDialog.Builder(this)
             .setTitle(R.string.menu_title)
@@ -339,8 +361,10 @@ class PlayerActivity : ComponentActivity() {
                     0 -> openShiftMenu()
                     1 -> openTrackMenu(C.TRACK_TYPE_AUDIO)
                     2 -> openTrackMenu(C.TRACK_TYPE_TEXT)
-                    3 -> openSpeedMenu()
-                    4 -> cycleResize()
+                    3 -> openQualityMenu()
+                    4 -> openSpeedMenu()
+                    5 -> cycleResize()
+                    6 -> if (recorder.isRecording) stopRecording() else startRecording()
                 }
             }
             .setOnDismissListener { goFullscreen() }
@@ -433,6 +457,91 @@ class PlayerActivity : ComponentActivity() {
             }
             .setOnDismissListener { goFullscreen() }
             .show()
+    }
+
+    /**
+     * Выбор качества видео.
+     *
+     * Апскейла здесь нет и быть не может — панель телевизора всё равно
+     * растянет кадр своим скейлером. Смысл пункта в другом: заставить
+     * ExoPlayer взять лучший вариант из тех, что отдаёт провайдер, если
+     * адаптивный алгоритм застрял на низком.
+     */
+    private fun openQualityMenu() {
+        val p = player ?: return
+        val groups = p.currentTracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO && it.isSupported }
+
+        val labels = arrayListOf(
+            getString(R.string.quality_auto),
+            getString(R.string.quality_max)
+        )
+        val targets = arrayListOf<Pair<Tracks.Group, Int>?>(null, null)
+
+        groups.forEach { g ->
+            for (i in 0 until g.length) {
+                if (!g.isTrackSupported(i)) continue
+                labels.add(videoLabel(g.getTrackFormat(i)))
+                targets.add(g to i)
+            }
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.menu_quality)
+            .setItems(labels.toTypedArray()) { _, which ->
+                val params = p.trackSelectionParameters.buildUpon()
+                when (which) {
+                    0 -> params.clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+                        .setForceHighestSupportedBitrate(false)
+                    1 -> params.clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+                        .setForceHighestSupportedBitrate(true)
+                    else -> targets[which]?.let { (g, i) ->
+                        params.setForceHighestSupportedBitrate(false)
+                            .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, i))
+                    }
+                }
+                p.trackSelectionParameters = params.build()
+            }
+            .setOnDismissListener { goFullscreen() }
+            .show()
+    }
+
+    private fun videoLabel(f: Format): String =
+        if (f.bitrate > 0) getString(
+            R.string.quality_line_rate, f.width, f.height, f.bitrate / 1_000_000f
+        ) else getString(R.string.quality_line, f.width, f.height)
+
+    // --------------------------------------------------------------- recording
+
+    private fun startRecording() {
+        val target = recorder.start()
+        if (target == null) {
+            Toast.makeText(this, R.string.rec_failed, Toast.LENGTH_LONG).show()
+            return
+        }
+        Toast.makeText(
+            this, getString(R.string.rec_started, target.name), Toast.LENGTH_LONG
+        ).show()
+    }
+
+    private fun stopRecording() {
+        val written = recorder.bytesWritten
+        val target = recorder.stop() ?: return
+        if (written == 0L) {
+            target.delete()
+            Toast.makeText(this, R.string.rec_empty, Toast.LENGTH_LONG).show()
+            return
+        }
+        Toast.makeText(
+            this,
+            getString(R.string.rec_stopped, formatSize(written), target.parent ?: ""),
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
+    private fun formatSize(bytes: Long): String = when {
+        bytes >= 1L shl 30 -> String.format("%.1f ГБ", bytes / (1L shl 30).toFloat())
+        bytes >= 1L shl 20 -> String.format("%.0f МБ", bytes / (1L shl 20).toFloat())
+        else -> String.format("%.0f КБ", bytes / 1024f)
     }
 
     /** Человекочитаемое имя дорожки: язык, каналы, кодек. */

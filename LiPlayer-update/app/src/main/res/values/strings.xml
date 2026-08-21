@@ -24,4 +24,17 @@
     <string name="track_off">Выключить</string>
     <string name="track_n">Дорожка %1$d</string>
     <string name="no_tracks">Дорожек не найдено</string>
+
+    <string name="menu_quality">Качество видео</string>
+    <string name="quality_auto">Авто (адаптивно)</string>
+    <string name="quality_max">Всегда максимальное</string>
+    <string name="quality_line">%1$d×%2$d</string>
+    <string name="quality_line_rate">%1$d×%2$d · %3$.1f Mbps</string>
+
+    <string name="menu_rec_start">Записать эфир</string>
+    <string name="menu_rec_stop">Остановить запись (%1$s)</string>
+    <string name="rec_started">Запись пошла: %1$s</string>
+    <string name="rec_stopped">Записано %1$s → %2$s</string>
+    <string name="rec_failed">Не удалось начать запись</string>
+    <string name="rec_empty">Запись пустая, файл удалён</string>
 </resources>
