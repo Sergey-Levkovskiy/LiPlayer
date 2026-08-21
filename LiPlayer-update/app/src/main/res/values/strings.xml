@@ -20,6 +20,9 @@
     <string name="ctl_rec_dur">Длительность</string>
     <string name="ctl_rec_dir">Куда писать</string>
     <string name="ctl_screen">Размер экрана</string>
+    <string name="ctl_rec_show">Кнопка записи</string>
+    <string name="val_shown">Показывать</string>
+    <string name="val_hidden">Скрыта</string>
     <string name="ctl_snooze">Пауза записи</string>
     <string name="menu_more">Ещё настройки</string>
 

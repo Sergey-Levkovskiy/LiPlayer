@@ -126,11 +126,12 @@ class PlayerActivity : ComponentActivity() {
         const val ROW_SHIFT_MANUAL = 5
         const val ROW_CLOCK = 6
         const val ROW_CLOCK_DIM = 7
-        const val ROW_REC_DELAY = 8
-        const val ROW_REC_DUR = 9
-        const val ROW_SNOOZE = 10
-        const val ROW_REC_DIR = 11
-        const val ROW_COUNT = 12
+        const val ROW_REC_SHOW = 8
+        const val ROW_REC_DELAY = 9
+        const val ROW_REC_DUR = 10
+        const val ROW_SNOOZE = 11
+        const val ROW_REC_DIR = 12
+        const val ROW_COUNT = 13
     }
 
     private lateinit var root: FrameLayout
@@ -184,6 +185,9 @@ class PlayerActivity : ComponentActivity() {
     private var recDurIndex = 0
     private var recDirIndex = 0
     private var snoozeIndex = 2          // 4,5 минуты
+
+    /** 0 — кнопка записи в панели показана, 1 — скрыта. */
+    private var recShowIndex = 0
 
     private var recStartAt = 0L
     private var recStopAt = 0L
@@ -329,6 +333,7 @@ class PlayerActivity : ComponentActivity() {
         recDelayIndex = p.getInt("rec_delay", 0).coerceIn(0, REC_DELAYS.size - 1)
         recDurIndex = p.getInt("rec_dur", 0).coerceIn(0, REC_DURATIONS.size - 1)
         snoozeIndex = p.getInt("snooze", 2).coerceIn(0, SNOOZE_SEC.size - 1)
+        recShowIndex = p.getInt("rec_show", 0).coerceIn(0, 1)
         recDirIndex = p.getInt("rec_dir", 0).coerceIn(0, recDirs().size - 1)
     }
 
@@ -571,7 +576,14 @@ class PlayerActivity : ComponentActivity() {
     private fun showUi(focus: Boolean) {
         playerView.showController()
         hideStockButtons()
-        if (focus && !hasPanelFocus()) btnRecord.requestFocus()
+        if (focus && !hasPanelFocus()) firstActionButton().requestFocus()
+    }
+
+    /** Первая доступная кнопка панели действий — для наведения фокуса. */
+    private fun firstActionButton(): View = when {
+        recorder.isRecording -> btnRecPause
+        recShowIndex == 0 -> btnRecord
+        else -> btnQuality
     }
 
     /** Пока открыт список или всплывашка, панель не должна уезжать. */
@@ -694,6 +706,7 @@ class PlayerActivity : ComponentActivity() {
             R.drawable.ic_shift,
             R.drawable.ic_clock,
             R.drawable.ic_clock_dim,
+            R.drawable.ic_record,
             R.drawable.ic_timer,
             R.drawable.ic_duration,
             R.drawable.ic_pause_timed,
@@ -735,6 +748,7 @@ class PlayerActivity : ComponentActivity() {
             ROW_SHIFT_MANUAL -> R.string.shift_manual
             ROW_CLOCK -> R.string.ctl_clock
             ROW_CLOCK_DIM -> R.string.ctl_clock_dim
+            ROW_REC_SHOW -> R.string.ctl_rec_show
             ROW_REC_DELAY -> R.string.ctl_rec_delay
             ROW_REC_DUR -> R.string.ctl_rec_dur
             ROW_SNOOZE -> R.string.ctl_snooze
@@ -765,6 +779,9 @@ class PlayerActivity : ComponentActivity() {
         }
         ROW_CLOCK_DIM -> getString(
             R.string.val_percent, (CLOCK_ALPHA[clockDim] * 100).roundToInt()
+        )
+        ROW_REC_SHOW -> getString(
+            if (recShowIndex == 0) R.string.val_shown else R.string.val_hidden
         )
         ROW_REC_DELAY -> delayValue()
         ROW_REC_DUR -> if (REC_DURATIONS[recDurIndex] == 0)
@@ -807,6 +824,11 @@ class PlayerActivity : ComponentActivity() {
                 clockDim = (clockDim + dir + CLOCK_ALPHA.size) % CLOCK_ALPHA.size
                 saveInt("clock_dim", clockDim)
                 applyClockStyle()
+            }
+            ROW_REC_SHOW -> {
+                recShowIndex = if (recShowIndex == 0) 1 else 0
+                saveInt("rec_show", recShowIndex)
+                syncRecordButtons()
             }
             ROW_REC_DELAY -> {
                 recDelayIndex = (recDelayIndex + dir + REC_DELAYS.size) % REC_DELAYS.size
@@ -1072,10 +1094,16 @@ class PlayerActivity : ComponentActivity() {
         ).show()
     }
 
-    /** Одна кнопка «запись» превращается в три: пауза, пауза на время, стоп. */
+    /**
+     * Одна кнопка «запись» превращается в три: пауза, пауза на время, стоп.
+     *
+     * Если кнопка скрыта настройкой, но запись уже идёт, органы управления
+     * всё равно показываем — иначе её нечем остановить.
+     */
     private fun syncRecordButtons() {
         val on = recorder.isRecording
-        btnRecord.visibility = if (on) View.GONE else View.VISIBLE
+        val allowed = recShowIndex == 0
+        btnRecord.visibility = if (!on && allowed) View.VISIBLE else View.GONE
         btnRecPause.visibility = if (on) View.VISIBLE else View.GONE
         btnRecSnooze.visibility = if (on) View.VISIBLE else View.GONE
         btnRecStop.visibility = if (on) View.VISIBLE else View.GONE
@@ -1089,9 +1117,7 @@ class PlayerActivity : ComponentActivity() {
             getString(R.string.rec_snooze, fmtMinSec(SNOOZE_SEC[snoozeIndex]))
 
         // Фокус не должен провалиться на скрытую кнопку.
-        if (currentFocus?.visibility == View.GONE) {
-            (if (on) btnRecPause else btnRecord).requestFocus()
-        }
+        if (currentFocus?.visibility == View.GONE) firstActionButton().requestFocus()
     }
 
     private fun refreshRecBadge() {
@@ -1272,14 +1298,20 @@ class PlayerActivity : ComponentActivity() {
             return true
         }
 
-        // Панель скрыта — первое нажатие только поднимает её.
+        // Панель скрыта — первое нажатие ТОЛЬКО поднимает её и никуда не
+        // проваливается. Иначе тот же OK долетал до кнопки записи, на
+        // которую фокус встал секунду назад, и запись стартовала сразу.
         if (!playerView.isControllerFullyVisible) {
             showUi(focus = true)
-            if (event.keyCode == KeyEvent.KEYCODE_DPAD_UP ||
-                event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN ||
-                event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT ||
-                event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
-            ) return true
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_UP,
+                KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent.KEYCODE_DPAD_RIGHT,
+                KeyEvent.KEYCODE_DPAD_CENTER,
+                KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_NUMPAD_ENTER -> return true
+            }
         } else {
             keepUiAlive()
         }
