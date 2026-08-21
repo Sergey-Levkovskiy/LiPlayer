@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Фон нижней панели: сплошной фирменный тёмный плюс акцентная линия
+     по верхней кромке — панель читается как часть приложения, а не
+     как дефолт Media3. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#FF101418" />
+        </shape>
+    </item>
+    <item android:height="2dp" android:gravity="top">
+        <shape android:shape="rectangle">
+            <solid android:color="#FF3D8BFD" />
+        </shape>
+    </item>
+</layer-list>

@@ -7,6 +7,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
+import android.view.ViewGroup
 import android.view.LayoutInflater
 import android.view.View
 import android.view.WindowManager
@@ -40,7 +41,9 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.core.content.ContextCompat
 import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.DefaultTimeBar
 import androidx.media3.ui.PlayerControlView
 import androidx.media3.ui.PlayerView
 import java.io.File
@@ -231,6 +234,7 @@ class PlayerActivity : ComponentActivity() {
         controls.showTimeoutMs = UI_TIMEOUT_MS.toInt()
 
         buildSideBar()
+        styleControls()
         applyClockStyle()
         ui.post(tick)
 
@@ -660,6 +664,47 @@ class PlayerActivity : ComponentActivity() {
         applyShift(showHud = false)
         refreshRow(ROW_SHIFT)
         keepBarAlive()
+    }
+
+    // -------------------------------------------------------------- оформление
+
+    /**
+     * Приводит панель Media3 к стилю проекта.
+     *
+     * Цвета полосы прокрутки заданы атрибутами внутри библиотечной вёрстки,
+     * поэтому меняем их в рантайме через сеттеры DefaultTimeBar — это
+     * надёжнее, чем подменять весь exo_player_control_view.xml своим.
+     */
+    private fun styleControls() {
+        // Плейлиста нет — кнопки «предыдущий/следующий» только мешают.
+        controls.setShowPreviousButton(false)
+        controls.setShowNextButton(false)
+        controls.setShowRewindButton(true)
+        controls.setShowFastForwardButton(true)
+
+        val accent = ContextCompat.getColor(this, R.color.brand_accent)
+        val text = ContextCompat.getColor(this, R.color.brand_text)
+
+        controls.findViewById<DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.apply {
+            setPlayedColor(accent)
+            setScrubberColor(accent)
+            setBufferedColor(ContextCompat.getColor(this@PlayerActivity, R.color.brand_buffered))
+            setUnplayedColor(ContextCompat.getColor(this@PlayerActivity, R.color.brand_unplayed))
+        }
+
+        tintTree(controls, text)
+
+        // Кнопка воспроизведения — акцентная, чтобы глаз цеплялся за неё.
+        controls.findViewById<ImageView>(androidx.media3.ui.R.id.exo_play_pause)
+            ?.setColorFilter(accent)
+    }
+
+    private fun tintTree(v: View, color: Int) {
+        when (v) {
+            is ViewGroup -> for (i in 0 until v.childCount) tintTree(v.getChildAt(i), color)
+            is ImageView -> v.setColorFilter(color)
+            is TextView -> v.setTextColor(color)
+        }
     }
 
     // ------------------------------------------------------------------- часы
