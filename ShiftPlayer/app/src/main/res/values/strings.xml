@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Shift Player</string>
+    <string name="hud_shift">Сдвиг: %1$d px</string>
+    <string name="hud_safe">предел: ±%1$d px</string>
+    <string name="hud_crop">ОБРЕЗКА</string>
+    <string name="err_playback">Ошибка воспроизведения: %1$s</string>
+</resources>
