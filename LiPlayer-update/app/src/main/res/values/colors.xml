@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand_bg">#FF101418</color>
+    <color name="brand_accent">#FF3D8BFD</color>
+    <color name="brand_text">#F2FFFFFF</color>
+    <color name="brand_buffered">#66FFFFFF</color>
+    <color name="brand_unplayed">#33FFFFFF</color>
+</resources>
