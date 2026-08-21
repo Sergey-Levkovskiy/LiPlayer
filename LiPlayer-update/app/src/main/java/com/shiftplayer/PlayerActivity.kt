@@ -118,19 +118,21 @@ class PlayerActivity : ComponentActivity() {
 
         // Ряды в панели «ещё настройки». Запись, качество и сдвиг живут
         // отдельными кнопками, поэтому здесь их нет.
-        const val ROW_AUDIO = 0
-        const val ROW_SUBS = 1
-        const val ROW_SPEED = 2
-        const val ROW_ASPECT = 3
-        const val ROW_SCREEN = 4
-        const val ROW_SHIFT_MANUAL = 5
-        const val ROW_CLOCK = 6
-        const val ROW_CLOCK_DIM = 7
-        const val ROW_REC_DELAY = 8
-        const val ROW_REC_DUR = 9
-        const val ROW_SNOOZE = 10
-        const val ROW_REC_DIR = 11
-        const val ROW_COUNT = 12
+        const val ROW_QUALITY = 0
+        const val ROW_AUDIO = 1
+        const val ROW_SUBS = 2
+        const val ROW_SPEED = 3
+        const val ROW_ASPECT = 4
+        const val ROW_SCREEN = 5
+        const val ROW_SHIFT_MANUAL = 6
+        const val ROW_CLOCK = 7
+        const val ROW_CLOCK_DIM = 8
+        const val ROW_REC_SHOW = 9
+        const val ROW_REC_DELAY = 10
+        const val ROW_REC_DUR = 11
+        const val ROW_SNOOZE = 12
+        const val ROW_REC_DIR = 13
+        const val ROW_COUNT = 14
     }
 
     private lateinit var root: FrameLayout
@@ -146,6 +148,7 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var actionBar: LinearLayout
     private lateinit var sideScroll: ScrollView
     private lateinit var sideBar: LinearLayout
+    private lateinit var auxPanel: LinearLayout
     private lateinit var recBadge: LinearLayout
     private lateinit var recDot: ImageView
     private lateinit var recSize: TextView
@@ -154,7 +157,6 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var btnRecPause: ImageButton
     private lateinit var btnRecSnooze: ImageButton
     private lateinit var btnRecStop: ImageButton
-    private lateinit var btnQuality: ImageButton
     private lateinit var btnShift: ImageButton
     private lateinit var btnSettings: ImageButton
 
@@ -185,13 +187,23 @@ class PlayerActivity : ComponentActivity() {
     private var recDirIndex = 0
     private var snoozeIndex = 2          // 4,5 минуты
 
+    /** 0 — кнопка записи в панели показана, 1 — скрыта. */
+    private var recShowIndex = 0
+
+    /**
+     * Ручное смещение «захватило» стрелки вверх/вниз.
+     *
+     * Без этого режима вверх/вниз означали бы переход между рядами, и кадр
+     * пришлось бы двигать влево/вправо — неинтуитивно для вертикали.
+     */
+    private var shiftCapture = false
+
     private var recStartAt = 0L
     private var recStopAt = 0L
     private var recResumeAt = 0L
 
     private val ui = Handler(Looper.getMainLooper())
     private val hideHud = Runnable { hud.visibility = View.GONE }
-    private val hideUi = Runnable { hideAllPanels() }
 
     private val clockFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
     private val stampFmt = SimpleDateFormat("d MMM, HH:mm", Locale.getDefault())
@@ -238,7 +250,17 @@ class PlayerActivity : ComponentActivity() {
 
         playerView.resizeMode = ASPECTS[aspectIndex]
         playerView.controllerShowTimeoutMs = UI_TIMEOUT_MS.toInt()
-        playerView.setShowSubtitleButton(true)
+
+        // Штатные настройки и субтитры Media3 не нужны — их заменяет наше
+        // меню, которое стоит на их месте в правом нижнем углу панели.
+        playerView.setShowSubtitleButton(false)
+        playerView.setControllerVisibilityListener(
+            object : PlayerView.ControllerVisibilityListener {
+                override fun onVisibilityChanged(visibility: Int) {
+                    onControllerVisibility(visibility == View.VISIBLE)
+                }
+            }
+        )
 
         buildSideBar()
         wireActions()
@@ -289,11 +311,13 @@ class PlayerActivity : ComponentActivity() {
         hud = findViewById(R.id.hud)
         drawer = findViewById(R.id.drawer)
         drawerList = findViewById(R.id.drawer_list)
+        drawerList.itemsCanFocus = true
         drawerEmpty = findViewById(R.id.drawer_empty)
         popup = findViewById(R.id.popup)
         actionBar = findViewById(R.id.action_bar)
         sideScroll = findViewById(R.id.side_scroll)
         sideBar = findViewById(R.id.side_bar)
+        auxPanel = findViewById(R.id.aux_panel)
         recBadge = findViewById(R.id.rec_badge)
         recDot = findViewById(R.id.rec_dot)
         recSize = findViewById(R.id.rec_size)
@@ -302,7 +326,6 @@ class PlayerActivity : ComponentActivity() {
         btnRecPause = findViewById(R.id.btn_rec_pause)
         btnRecSnooze = findViewById(R.id.btn_rec_snooze)
         btnRecStop = findViewById(R.id.btn_rec_stop)
-        btnQuality = findViewById(R.id.btn_quality)
         btnShift = findViewById(R.id.btn_shift)
         btnSettings = findViewById(R.id.btn_settings)
     }
@@ -320,6 +343,7 @@ class PlayerActivity : ComponentActivity() {
         recDelayIndex = p.getInt("rec_delay", 0).coerceIn(0, REC_DELAYS.size - 1)
         recDurIndex = p.getInt("rec_dur", 0).coerceIn(0, REC_DURATIONS.size - 1)
         snoozeIndex = p.getInt("snooze", 2).coerceIn(0, SNOOZE_SEC.size - 1)
+        recShowIndex = p.getInt("rec_show", 0).coerceIn(0, 1)
         recDirIndex = p.getInt("rec_dir", 0).coerceIn(0, recDirs().size - 1)
     }
 
@@ -529,23 +553,66 @@ class PlayerActivity : ComponentActivity() {
         btnRecPause.setOnClickListener { toggleRecPause() }
         btnRecSnooze.setOnClickListener { snoozeRecording() }
         btnRecStop.setOnClickListener { stopRecording() }
-        btnQuality.setOnClickListener { openQualityPopup() }
         btnShift.setOnClickListener { openShiftPopup() }
         btnSettings.setOnClickListener { toggleSidePanel() }
         syncRecordButtons()
     }
 
-    /** Любое нажатие поднимает панель действий и продлевает ей жизнь. */
+    /**
+     * Наши иконки живут и умирают вместе с панелью Media3 — иначе они
+     * висели бы над видео, когда панель уже скрылась.
+     */
+    private fun onControllerVisibility(shown: Boolean) {
+        actionBar.visibility = if (shown) View.VISIBLE else View.GONE
+        // INVISIBLE, а не GONE: иначе плашка записи под кнопкой прыгает.
+        btnLibrary.visibility = if (shown) View.VISIBLE else View.INVISIBLE
+        hideStockButtons()
+        if (!shown) closePanels()
+    }
+
+    /**
+     * Шестерёнка Media3 скрывается по id: публичного сеттера у неё нет.
+     * Повторяем при каждом показе панели — библиотека её пересобирает.
+     */
+    private fun hideStockButtons() {
+        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_settings)
+            ?.visibility = View.GONE
+        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_subtitle)
+            ?.visibility = View.GONE
+    }
+
+    /** Любое нажатие поднимает панель и продлевает ей жизнь. */
     private fun showUi(focus: Boolean) {
-        actionBar.visibility = View.VISIBLE
-        leftTop.visibility = View.VISIBLE
-        if (focus && !hasPanelFocus()) btnRecord.requestFocus()
-        keepUiAlive()
+        playerView.showController()
+        hideStockButtons()
+        if (focus && !hasPanelFocus()) firstActionButton().requestFocus()
+    }
+
+    /** Первая доступная кнопка панели действий — для наведения фокуса. */
+    private fun firstActionButton(): View = when {
+        recorder.isRecording -> btnRecPause
+        recShowIndex == 0 -> btnRecord
+        else -> btnShift
+    }
+
+    /** Пока открыт список или всплывашка, панель не должна уезжать. */
+    private fun pinController(pinned: Boolean) {
+        playerView.controllerShowTimeoutMs =
+            if (pinned) 0 else UI_TIMEOUT_MS.toInt()
+        playerView.showController()
     }
 
     private fun keepUiAlive() {
-        ui.removeCallbacks(hideUi)
-        ui.postDelayed(hideUi, UI_TIMEOUT_MS)
+        if (playerView.controllerShowTimeoutMs != 0) playerView.showController()
+    }
+
+    private fun closePanels() {
+        popup.visibility = View.GONE
+        popup.removeAllViews()
+        drawer.visibility = View.GONE
+        sideScroll.visibility = View.GONE
+        auxPanel.visibility = View.GONE
+        shiftCapture = false
     }
 
     private fun hasPanelFocus(): Boolean {
@@ -564,18 +631,6 @@ class PlayerActivity : ComponentActivity() {
         return false
     }
 
-    private fun hideAllPanels() {
-        // Открытые списки не закрываем по таймауту: человек их читает.
-        if (drawer.visibility == View.VISIBLE || sideScroll.visibility == View.VISIBLE) {
-            keepUiAlive()
-            return
-        }
-        popup.visibility = View.GONE
-        popup.removeAllViews()
-        actionBar.visibility = View.GONE
-        if (!recorder.isRecording) leftTop.visibility = View.GONE
-    }
-
     // ------------------------------------------------------------- всплывашки
 
     /** Меню НАД кнопкой: три иконки для сдвига, три пункта для качества. */
@@ -583,8 +638,8 @@ class PlayerActivity : ComponentActivity() {
         popup.removeAllViews()
         views.forEach { popup.addView(it) }
         popup.visibility = View.VISIBLE
+        pinController(true)
         views.firstOrNull()?.requestFocus()
-        keepUiAlive()
     }
 
     private fun popupIcon(iconRes: Int, label: String, action: () -> Unit): View {
@@ -595,8 +650,8 @@ class PlayerActivity : ComponentActivity() {
             action()
             popup.visibility = View.GONE
             popup.removeAllViews()
+            pinController(false)
             actionBar.requestFocus()
-            keepUiAlive()
         }
         return row
     }
@@ -617,42 +672,29 @@ class PlayerActivity : ComponentActivity() {
         )
     }
 
-    private fun openQualityPopup() {
-        val views = ArrayList<View>()
-        views.add(popupIcon(R.drawable.ic_quality, getString(R.string.val_max)) {
-            setQuality(0)
-        })
-        views.add(popupIcon(R.drawable.ic_quality, getString(R.string.val_auto)) {
-            setQuality(1)
-        })
-        flatTracks(C.TRACK_TYPE_VIDEO).forEachIndexed { i, (g, t) ->
-            views.add(
-                popupIcon(R.drawable.ic_quality, videoLabel(g.getTrackFormat(t))) {
-                    setQuality(2 + i)
-                }
-            )
-        }
-        openPopup(views)
-    }
-
     // ------------------------------------------------------------ панель настроек
 
     private fun toggleSidePanel() {
         if (sideScroll.visibility == View.VISIBLE) {
             sideScroll.visibility = View.GONE
+            auxPanel.visibility = View.GONE
+            shiftCapture = false
+            pinController(false)
             btnSettings.requestFocus()
         } else {
             drawer.visibility = View.GONE
             refreshAllRows()
             sideScroll.visibility = View.VISIBLE
+            pinController(true)
             rowViews.firstOrNull()?.requestFocus()
+            updateAux(0)
         }
-        keepUiAlive()
     }
 
     private fun buildSideBar() {
         val inflater = LayoutInflater.from(this)
         val icons = intArrayOf(
+            R.drawable.ic_quality,
             R.drawable.ic_audio,
             R.drawable.ic_subs,
             R.drawable.ic_speed,
@@ -661,6 +703,7 @@ class PlayerActivity : ComponentActivity() {
             R.drawable.ic_shift,
             R.drawable.ic_clock,
             R.drawable.ic_clock_dim,
+            R.drawable.ic_record,
             R.drawable.ic_timer,
             R.drawable.ic_duration,
             R.drawable.ic_pause_timed,
@@ -671,17 +714,119 @@ class PlayerActivity : ComponentActivity() {
             row.findViewById<ImageView>(R.id.row_icon).setImageResource(icons[i])
             row.setOnKeyListener { _, code, event ->
                 if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-                when (code) {
-                    KeyEvent.KEYCODE_DPAD_LEFT -> { stepRow(i, -1, event.repeatCount > 4); true }
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> { stepRow(i, 1, event.repeatCount > 4); true }
+                val fast = event.repeatCount > 4
+
+                // В режиме захвата вертикальные стрелки двигают кадр,
+                // а не переводят фокус на соседний ряд.
+                if (i == ROW_SHIFT_MANUAL && shiftCapture) {
+                    when (code) {
+                        KeyEvent.KEYCODE_DPAD_UP -> { nudgeManual(-1, fast); true }
+                        KeyEvent.KEYCODE_DPAD_DOWN -> { nudgeManual(1, fast); true }
+                        KeyEvent.KEYCODE_DPAD_LEFT -> { nudgeManual(-1, fast); true }
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> { nudgeManual(1, fast); true }
+                        KeyEvent.KEYCODE_DPAD_CENTER,
+                        KeyEvent.KEYCODE_ENTER -> { setShiftCapture(false); true }
+                        else -> false
+                    }
+                } else when (code) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> { stepRow(i, -1, fast); true }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> { stepRow(i, 1, fast); true }
                     else -> false
                 }
             }
-            row.setOnClickListener { stepRow(i, 1, false) }
+            row.setOnClickListener {
+                if (i == ROW_SHIFT_MANUAL) setShiftCapture(!shiftCapture)
+                else stepRow(i, 1, false)
+            }
+            row.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) {
+                    if (shiftCapture && i != ROW_SHIFT_MANUAL) setShiftCapture(false)
+                    updateAux(i)
+                }
+            }
             rowViews.add(row)
             rowLabels.add(row.findViewById(R.id.row_label))
             sideBar.addView(row)
         }
+    }
+
+    private fun setShiftCapture(on: Boolean) {
+        shiftCapture = on
+        if (on) shiftMode = 3
+        updateAux(ROW_SHIFT_MANUAL)
+        refreshRow(ROW_SHIFT_MANUAL)
+    }
+
+    private fun nudgeManual(dir: Int, fast: Boolean) {
+        shiftMode = 3
+        shiftPx += dir * (if (fast) 24f else 4f)
+        applyShift(showHud = false)
+        refreshRow(ROW_SHIFT_MANUAL)
+        updateAux(ROW_SHIFT_MANUAL)
+        keepUiAlive()
+    }
+
+    /**
+     * Подсказка слева от выбранного ряда.
+     *
+     * У дорожек и субтитров — весь список сразу, чтобы не перебирать
+     * вслепую. У ручного смещения — текущее значение и что нажимать.
+     */
+    private fun updateAux(row: Int) {
+        when (row) {
+            ROW_AUDIO -> {
+                val list = flatTracks(C.TRACK_TYPE_AUDIO)
+                showAux(
+                    list.mapIndexed { i, (g, t) -> trackLabel(g.getTrackFormat(t), i) },
+                    audioIndex
+                )
+            }
+            ROW_SUBS -> {
+                val labels = ArrayList<String>()
+                labels.add(getString(R.string.val_off))
+                flatTracks(C.TRACK_TYPE_TEXT).forEachIndexed { i, (g, t) ->
+                    labels.add(trackLabel(g.getTrackFormat(t), i))
+                }
+                showAux(labels, subsIndex)
+            }
+            ROW_QUALITY -> {
+                val labels = arrayListOf(
+                    getString(R.string.val_max), getString(R.string.val_auto)
+                )
+                flatTracks(C.TRACK_TYPE_VIDEO).forEach { (g, t) ->
+                    labels.add(videoLabel(g.getTrackFormat(t)))
+                }
+                showAux(labels, qualityIndex)
+            }
+            ROW_SHIFT_MANUAL -> showAux(
+                listOf(
+                    getString(R.string.shift_now, shiftPx.roundToInt()),
+                    getString(R.string.shift_limit, safeMarginPx.roundToInt()),
+                    getString(
+                        if (shiftCapture) R.string.shift_capture_on
+                        else R.string.shift_capture_off
+                    )
+                ),
+                if (shiftCapture) 2 else -1
+            )
+            else -> auxPanel.visibility = View.GONE
+        }
+    }
+
+    private fun showAux(labels: List<String>, current: Int) {
+        auxPanel.removeAllViews()
+        if (labels.isEmpty()) {
+            auxPanel.visibility = View.GONE
+            return
+        }
+        val inflater = LayoutInflater.from(this)
+        labels.forEachIndexed { i, s ->
+            val tv = inflater.inflate(R.layout.row_aux, auxPanel, false) as TextView
+            tv.text = s
+            if (i == current) tv.setBackgroundResource(R.drawable.row_selected)
+            auxPanel.addView(tv)
+        }
+        auxPanel.visibility = View.VISIBLE
     }
 
     private fun refreshAllRows() {
@@ -694,6 +839,7 @@ class PlayerActivity : ComponentActivity() {
 
     private fun rowTitle(i: Int): String = getString(
         when (i) {
+            ROW_QUALITY -> R.string.ctl_quality
             ROW_AUDIO -> R.string.ctl_audio
             ROW_SUBS -> R.string.ctl_subs
             ROW_SPEED -> R.string.ctl_speed
@@ -702,6 +848,7 @@ class PlayerActivity : ComponentActivity() {
             ROW_SHIFT_MANUAL -> R.string.shift_manual
             ROW_CLOCK -> R.string.ctl_clock
             ROW_CLOCK_DIM -> R.string.ctl_clock_dim
+            ROW_REC_SHOW -> R.string.ctl_rec_show
             ROW_REC_DELAY -> R.string.ctl_rec_delay
             ROW_REC_DUR -> R.string.ctl_rec_dur
             ROW_SNOOZE -> R.string.ctl_snooze
@@ -710,6 +857,7 @@ class PlayerActivity : ComponentActivity() {
     )
 
     private fun rowValue(i: Int): String = when (i) {
+        ROW_QUALITY -> qualityValue()
         ROW_AUDIO -> trackValue(C.TRACK_TYPE_AUDIO, audioIndex)
         ROW_SUBS -> if (subsIndex == 0) getString(R.string.val_off)
         else trackValue(C.TRACK_TYPE_TEXT, subsIndex - 1)
@@ -733,6 +881,9 @@ class PlayerActivity : ComponentActivity() {
         ROW_CLOCK_DIM -> getString(
             R.string.val_percent, (CLOCK_ALPHA[clockDim] * 100).roundToInt()
         )
+        ROW_REC_SHOW -> getString(
+            if (recShowIndex == 0) R.string.val_shown else R.string.val_hidden
+        )
         ROW_REC_DELAY -> delayValue()
         ROW_REC_DUR -> if (REC_DURATIONS[recDurIndex] == 0)
             getString(R.string.rec_unlimited)
@@ -743,6 +894,7 @@ class PlayerActivity : ComponentActivity() {
 
     private fun stepRow(i: Int, dir: Int, fast: Boolean) {
         when (i) {
+            ROW_QUALITY -> stepQuality(dir)
             ROW_AUDIO -> stepTrack(C.TRACK_TYPE_AUDIO, dir)
             ROW_SUBS -> stepTrack(C.TRACK_TYPE_TEXT, dir)
             ROW_SPEED -> {
@@ -760,11 +912,7 @@ class PlayerActivity : ComponentActivity() {
                 saveInt("screen", screenIndex)
                 applyScreenSize()
             }
-            ROW_SHIFT_MANUAL -> {
-                shiftMode = 3
-                shiftPx += dir * (if (fast) 24f else 4f)
-                applyShift(showHud = true)
-            }
+            ROW_SHIFT_MANUAL -> nudgeManual(dir, fast)
             ROW_CLOCK -> {
                 clockSize = (clockSize + dir + CLOCK_SP.size) % CLOCK_SP.size
                 saveInt("clock_size", clockSize)
@@ -774,6 +922,11 @@ class PlayerActivity : ComponentActivity() {
                 clockDim = (clockDim + dir + CLOCK_ALPHA.size) % CLOCK_ALPHA.size
                 saveInt("clock_dim", clockDim)
                 applyClockStyle()
+            }
+            ROW_REC_SHOW -> {
+                recShowIndex = if (recShowIndex == 0) 1 else 0
+                saveInt("rec_show", recShowIndex)
+                syncRecordButtons()
             }
             ROW_REC_DELAY -> {
                 recDelayIndex = (recDelayIndex + dir + REC_DELAYS.size) % REC_DELAYS.size
@@ -794,6 +947,7 @@ class PlayerActivity : ComponentActivity() {
             }
         }
         refreshRow(i)
+        updateAux(i)
         keepUiAlive()
     }
 
@@ -902,6 +1056,21 @@ class PlayerActivity : ComponentActivity() {
      * кадр своим скейлером. Смысл в том, чтобы взять лучший из вариантов,
      * которые отдаёт провайдер.
      */
+    private fun qualityValue(): String {
+        if (qualityIndex == 0) return getString(R.string.val_max)
+        if (qualityIndex == 1) return getString(R.string.val_auto)
+        val list = flatTracks(C.TRACK_TYPE_VIDEO)
+        val at = qualityIndex - 2
+        if (at !in list.indices) return getString(R.string.val_max)
+        val (g, i) = list[at]
+        return videoLabel(g.getTrackFormat(i))
+    }
+
+    private fun stepQuality(dir: Int) {
+        val size = 2 + flatTracks(C.TRACK_TYPE_VIDEO).size
+        setQuality((qualityIndex + dir + size) % size)
+    }
+
     private fun setQuality(index: Int) {
         val p = player ?: return
         qualityIndex = index
@@ -1039,10 +1208,16 @@ class PlayerActivity : ComponentActivity() {
         ).show()
     }
 
-    /** Одна кнопка «запись» превращается в три: пауза, пауза на время, стоп. */
+    /**
+     * Одна кнопка «запись» превращается в три: пауза, пауза на время, стоп.
+     *
+     * Если кнопка скрыта настройкой, но запись уже идёт, органы управления
+     * всё равно показываем — иначе её нечем остановить.
+     */
     private fun syncRecordButtons() {
         val on = recorder.isRecording
-        btnRecord.visibility = if (on) View.GONE else View.VISIBLE
+        val allowed = recShowIndex == 0
+        btnRecord.visibility = if (!on && allowed) View.VISIBLE else View.GONE
         btnRecPause.visibility = if (on) View.VISIBLE else View.GONE
         btnRecSnooze.visibility = if (on) View.VISIBLE else View.GONE
         btnRecStop.visibility = if (on) View.VISIBLE else View.GONE
@@ -1056,9 +1231,7 @@ class PlayerActivity : ComponentActivity() {
             getString(R.string.rec_snooze, fmtMinSec(SNOOZE_SEC[snoozeIndex]))
 
         // Фокус не должен провалиться на скрытую кнопку.
-        if (currentFocus?.visibility == View.GONE) {
-            (if (on) btnRecPause else btnRecord).requestFocus()
-        }
+        if (currentFocus?.visibility == View.GONE) firstActionButton().requestFocus()
     }
 
     private fun refreshRecBadge() {
@@ -1141,14 +1314,38 @@ class PlayerActivity : ComponentActivity() {
     private fun toggleDrawer() {
         if (drawer.visibility == View.VISIBLE) {
             drawer.visibility = View.GONE
+            pinController(false)
             btnLibrary.requestFocus()
         } else {
             sideScroll.visibility = View.GONE
             reloadRecordings()
             drawer.visibility = View.VISIBLE
-            drawerList.requestFocus()
+            pinController(true)
+            focusFirstRecording()
         }
-        keepUiAlive()
+    }
+
+    /**
+     * Наводит фокус на первую запись.
+     *
+     * Сразу после показа ящика рядов ещё нет — ListView их не разложил,
+     * поэтому ждём кадр отрисовки и при необходимости пробуем ещё раз.
+     */
+    private fun focusFirstRecording(attempt: Int = 0) {
+        if (recordings.isEmpty()) {
+            btnLibrary.requestFocus()
+            return
+        }
+        drawerList.post {
+            if (drawer.visibility != View.VISIBLE) return@post
+            drawerList.setSelection(0)
+            val row = drawerList.getChildAt(0)?.findViewById<View>(R.id.rec_row)
+            when {
+                row != null -> row.requestFocus()
+                attempt < 3 -> focusFirstRecording(attempt + 1)
+                else -> drawerList.requestFocus()
+            }
+        }
     }
 
     private fun reloadRecordings() {
@@ -1180,6 +1377,7 @@ class PlayerActivity : ComponentActivity() {
                     thumbs.remove(f.absolutePath)
                     Toast.makeText(this, R.string.del_done, Toast.LENGTH_SHORT).show()
                     reloadRecordings()
+                    focusFirstRecording()
                 } else {
                     Toast.makeText(this, R.string.del_failed, Toast.LENGTH_LONG).show()
                 }
@@ -1218,15 +1416,19 @@ class PlayerActivity : ComponentActivity() {
         // BACK закрывает открытое, а не выходит из плеера.
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             when {
+                shiftCapture -> { setShiftCapture(false); return true }
                 popup.visibility == View.VISIBLE -> {
                     popup.visibility = View.GONE
                     popup.removeAllViews()
+                    pinController(false)
                     btnShift.requestFocus()
                     return true
                 }
                 drawer.visibility == View.VISIBLE -> { toggleDrawer(); return true }
                 sideScroll.visibility == View.VISIBLE -> { toggleSidePanel(); return true }
-                actionBar.visibility == View.VISIBLE -> { hideAllPanels(); return true }
+                playerView.isControllerFullyVisible -> {
+                    playerView.hideController(); return true
+                }
             }
         }
 
@@ -1235,14 +1437,20 @@ class PlayerActivity : ComponentActivity() {
             return true
         }
 
-        // Панель скрыта — первое нажатие только поднимает её.
-        if (actionBar.visibility != View.VISIBLE) {
+        // Панель скрыта — первое нажатие ТОЛЬКО поднимает её и никуда не
+        // проваливается. Иначе тот же OK долетал до кнопки записи, на
+        // которую фокус встал секунду назад, и запись стартовала сразу.
+        if (!playerView.isControllerFullyVisible) {
             showUi(focus = true)
-            if (event.keyCode == KeyEvent.KEYCODE_DPAD_UP ||
-                event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN ||
-                event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT ||
-                event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
-            ) return true
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_UP,
+                KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent.KEYCODE_DPAD_RIGHT,
+                KeyEvent.KEYCODE_DPAD_CENTER,
+                KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_NUMPAD_ENTER -> return true
+            }
         } else {
             keepUiAlive()
         }

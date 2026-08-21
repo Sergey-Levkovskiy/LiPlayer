@@ -20,6 +20,9 @@
     <string name="ctl_rec_dur">Длительность</string>
     <string name="ctl_rec_dir">Куда писать</string>
     <string name="ctl_screen">Размер экрана</string>
+    <string name="ctl_rec_show">Кнопка записи</string>
+    <string name="val_shown">Показывать</string>
+    <string name="val_hidden">Скрыта</string>
     <string name="ctl_snooze">Пауза записи</string>
     <string name="menu_more">Ещё настройки</string>
 
@@ -53,6 +56,10 @@
     <string name="shift_top">Вверх до края</string>
     <string name="shift_bottom">Вниз до края</string>
     <string name="shift_manual">Вручную</string>
+    <string name="shift_capture_off">OK — включить стрелки ↑ ↓</string>
+    <string name="shift_capture_on">↑ ↓ двигать кадр · OK — готово</string>
+    <string name="shift_now">Сейчас: %1$d px</string>
+    <string name="shift_limit">Предел: ±%1$d px</string>
     <string name="shift_manual_on">Вручную ↑↓ %1$d px</string>
 
     <string name="aspect_fit">По размеру</string>

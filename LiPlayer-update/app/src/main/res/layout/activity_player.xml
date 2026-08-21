@@ -7,6 +7,7 @@
   popup       : всплывающее меню НАД панелью действий
   action_bar  : четыре действия внизу справа
   side_scroll : остальные настройки, справа по центру
+  aux_panel   : список доступных значений для выбранного ряда
 
   Навигация — штатным фокусом Android, без ручной маршрутизации кнопок:
   focusable + nextFocus, а не dispatchKeyEvent.
@@ -162,7 +163,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|right"
         android:layout_marginRight="26dp"
-        android:layout_marginBottom="168dp"
+        android:layout_marginBottom="76dp"
         android:background="@drawable/popup_bg"
         android:orientation="vertical"
         android:padding="6dp"
@@ -174,17 +175,16 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|right"
-        android:layout_marginRight="24dp"
-        android:layout_marginBottom="104dp"
-        android:background="@drawable/bar_bg"
+        android:layout_marginRight="10dp"
+        android:layout_marginBottom="6dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:padding="6dp">
+        android:padding="2dp">
 
         <ImageButton
             android:id="@+id/btn_record"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:background="@drawable/btn_focus"
             android:contentDescription="@string/ctl_record"
             android:focusable="true"
@@ -194,8 +194,8 @@
 
         <ImageButton
             android:id="@+id/btn_rec_pause"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:background="@drawable/btn_focus"
             android:contentDescription="@string/rec_pause"
             android:focusable="true"
@@ -206,8 +206,8 @@
 
         <ImageButton
             android:id="@+id/btn_rec_snooze"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:background="@drawable/btn_focus"
             android:contentDescription="@string/rec_snooze"
             android:focusable="true"
@@ -218,8 +218,8 @@
 
         <ImageButton
             android:id="@+id/btn_rec_stop"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:background="@drawable/btn_focus"
             android:contentDescription="@string/rec_stop"
             android:focusable="true"
@@ -228,21 +228,11 @@
             android:src="@drawable/ic_stop"
             android:visibility="gone" />
 
-        <ImageButton
-            android:id="@+id/btn_quality"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
-            android:background="@drawable/btn_focus"
-            android:contentDescription="@string/ctl_quality"
-            android:focusable="true"
-            android:padding="11dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_quality" />
 
         <ImageButton
             android:id="@+id/btn_shift"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:background="@drawable/btn_focus"
             android:contentDescription="@string/ctl_shift"
             android:focusable="true"
@@ -252,8 +242,8 @@
 
         <ImageButton
             android:id="@+id/btn_settings"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:background="@drawable/btn_focus"
             android:contentDescription="@string/menu_more"
             android:focusable="true"
@@ -263,27 +253,46 @@
     </LinearLayout>
 
     <!-- ================================== остальные настройки, справа -->
-    <ScrollView
-        android:id="@+id/side_scroll"
+    <!-- Настройки и подсказка к выбранному ряду стоят рядом: подсказка
+         слева от панели, поэтому оба лежат в одной горизонтальной ленте. -->
+    <LinearLayout
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="right|center_vertical"
+        android:layout_height="match_parent"
+        android:layout_gravity="right"
         android:layout_marginRight="24dp"
-        android:layout_marginTop="16dp"
-        android:layout_marginBottom="16dp"
-        android:background="@drawable/bar_bg"
-        android:scrollbars="none"
-        android:visibility="gone">
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingTop="16dp"
+        android:paddingBottom="16dp">
 
         <LinearLayout
-            android:id="@+id/side_bar"
+            android:id="@+id/aux_panel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginRight="10dp"
+            android:background="@drawable/popup_bg"
             android:orientation="vertical"
-            android:paddingLeft="8dp"
-            android:paddingRight="8dp"
-            android:paddingTop="8dp"
-            android:paddingBottom="8dp" />
-    </ScrollView>
+            android:padding="8dp"
+            android:visibility="gone" />
+
+        <ScrollView
+            android:id="@+id/side_scroll"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bar_bg"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/side_bar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingLeft="8dp"
+                android:paddingRight="8dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp" />
+        </ScrollView>
+    </LinearLayout>
 
 </FrameLayout>
