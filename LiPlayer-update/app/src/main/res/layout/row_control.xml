@@ -1,27 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ряд панели настроек: иконка, а справа подпись со значением
-     (появляется только у выбранного ряда). -->
+<!-- Ряд панели настроек. Панель справа, поэтому подпись идёт ПЕРЕД иконкой,
+     а сами иконки выровнены по правому краю. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="wrap_content"
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:gravity="center_vertical"
+    android:gravity="center_vertical|right"
     android:orientation="horizontal"
-    android:paddingStart="6dp"
-    android:paddingEnd="10dp"
+    android:paddingLeft="10dp"
+    android:paddingRight="6dp"
     android:paddingTop="4dp"
     android:paddingBottom="4dp">
-
-    <ImageView
-        android:id="@+id/row_icon"
-        android:layout_width="28dp"
-        android:layout_height="28dp" />
 
     <TextView
         android:id="@+id/row_label"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="12dp"
+        android:layout_marginRight="12dp"
         android:textColor="#FFFFFF"
         android:textSize="18sp"
         android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/row_icon"
+        android:layout_width="28dp"
+        android:layout_height="28dp" />
 </LinearLayout>
