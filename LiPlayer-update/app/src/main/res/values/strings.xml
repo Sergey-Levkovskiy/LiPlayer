@@ -62,4 +62,21 @@
 
     <string name="dir_internal">Внутренняя память</string>
     <string name="dir_removable">Накопитель %1$d</string>
+
+    <string name="lib_hint">OK — смотреть · MENU или долгое нажатие — удалить запись</string>
+    <string name="lib_empty">Пока нечего показать. Откройте файл вручную или запустите видео из другого приложения.</string>
+    <string name="lib_recordings">Записи эфира</string>
+    <string name="lib_device">Видео на устройстве</string>
+    <string name="lib_other">Другое</string>
+    <string name="lib_pick">Открыть файл вручную…</string>
+    <string name="lib_unnamed">Без названия</string>
+    <string name="lib_rec_meta">%1$s · %2$s</string>
+    <string name="lib_media_meta">%1$s · %2$s</string>
+
+    <string name="del_title">Удалить запись?</string>
+    <string name="del_message">%1$s\n%2$s\n\nФайл будет удалён безвозвратно.</string>
+    <string name="del_ok">Удалить</string>
+    <string name="del_cancel">Отмена</string>
+    <string name="del_done">Запись удалена</string>
+    <string name="del_failed">Не удалось удалить файл</string>
 </resources>

@@ -1,5 +1,6 @@
 package com.shiftplayer
 
+import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Bundle
@@ -18,7 +19,6 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -68,7 +68,11 @@ import kotlin.math.roundToInt
 class PlayerActivity : ComponentActivity() {
 
     private companion object {
-        const val SEEK_STEP_MS = 120_000L
+        /** Кнопки «назад/вперёд» рядом с паузой. */
+        const val SEEK_BUTTON_MS = 15_000L
+
+        /** Стрелки, когда фокус стоит на полосе времени. */
+        const val SEEK_BAR_MS = 120_000L
 
         /**
          * Насколько не доводим кадр до края чёрной полосы.
@@ -203,10 +207,6 @@ class PlayerActivity : ComponentActivity() {
     /** Пишет сетевые байты в файл параллельно воспроизведению. */
     private val recorder by lazy { StreamRecorder(recDirs().first()) }
 
-    private val pickVideo = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? -> if (uri == null) finish() else startPlayback(uri) }
-
     // ---------------------------------------------------------------- lifecycle
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -239,7 +239,24 @@ class PlayerActivity : ComponentActivity() {
         ui.post(tick)
 
         val uri = intent?.data
-        if (uri != null) startPlayback(uri) else pickVideo.launch(arrayOf("video/*"))
+        if (uri != null) {
+            startPlayback(uri)
+        } else {
+            startActivity(Intent(this, LibraryActivity::class.java))
+            finish()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.data?.let { startPlayback(it) }
+    }
+
+    /** Плеер освобождается в onStop, поэтому при возврате поднимаем заново. */
+    override fun onStart() {
+        super.onStart()
+        if (player == null) currentUri?.let { startPlayback(it) }
     }
 
     override fun onStop() {
@@ -308,8 +325,8 @@ class PlayerActivity : ComponentActivity() {
         val exo = ExoPlayer.Builder(this, renderers)
             .setMediaSourceFactory(sources)
             .setTrackSelector(selector)
-            .setSeekBackIncrementMs(SEEK_STEP_MS)
-            .setSeekForwardIncrementMs(SEEK_STEP_MS)
+            .setSeekBackIncrementMs(SEEK_BUTTON_MS)
+            .setSeekForwardIncrementMs(SEEK_BUTTON_MS)
             .build()
 
         playerView.player = exo
@@ -686,6 +703,8 @@ class PlayerActivity : ComponentActivity() {
         val text = ContextCompat.getColor(this, R.color.brand_text)
 
         controls.findViewById<DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.apply {
+            // Шаг стрелок по самой полосе — крупный, кнопки остаются мелкими.
+            setKeyTimeIncrement(SEEK_BAR_MS)
             setPlayedColor(accent)
             setScrubberColor(accent)
             setBufferedColor(ContextCompat.getColor(this@PlayerActivity, R.color.brand_buffered))
