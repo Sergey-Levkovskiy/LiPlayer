@@ -227,16 +227,6 @@
             android:src="@drawable/ic_stop"
             android:visibility="gone" />
 
-        <ImageButton
-            android:id="@+id/btn_quality"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="@drawable/btn_focus"
-            android:contentDescription="@string/ctl_quality"
-            android:focusable="true"
-            android:padding="11dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_quality" />
 
         <ImageButton
             android:id="@+id/btn_shift"

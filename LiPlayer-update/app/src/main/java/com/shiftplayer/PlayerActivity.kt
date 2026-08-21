@@ -118,20 +118,21 @@ class PlayerActivity : ComponentActivity() {
 
         // Ряды в панели «ещё настройки». Запись, качество и сдвиг живут
         // отдельными кнопками, поэтому здесь их нет.
-        const val ROW_AUDIO = 0
-        const val ROW_SUBS = 1
-        const val ROW_SPEED = 2
-        const val ROW_ASPECT = 3
-        const val ROW_SCREEN = 4
-        const val ROW_SHIFT_MANUAL = 5
-        const val ROW_CLOCK = 6
-        const val ROW_CLOCK_DIM = 7
-        const val ROW_REC_SHOW = 8
-        const val ROW_REC_DELAY = 9
-        const val ROW_REC_DUR = 10
-        const val ROW_SNOOZE = 11
-        const val ROW_REC_DIR = 12
-        const val ROW_COUNT = 13
+        const val ROW_QUALITY = 0
+        const val ROW_AUDIO = 1
+        const val ROW_SUBS = 2
+        const val ROW_SPEED = 3
+        const val ROW_ASPECT = 4
+        const val ROW_SCREEN = 5
+        const val ROW_SHIFT_MANUAL = 6
+        const val ROW_CLOCK = 7
+        const val ROW_CLOCK_DIM = 8
+        const val ROW_REC_SHOW = 9
+        const val ROW_REC_DELAY = 10
+        const val ROW_REC_DUR = 11
+        const val ROW_SNOOZE = 12
+        const val ROW_REC_DIR = 13
+        const val ROW_COUNT = 14
     }
 
     private lateinit var root: FrameLayout
@@ -155,7 +156,6 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var btnRecPause: ImageButton
     private lateinit var btnRecSnooze: ImageButton
     private lateinit var btnRecStop: ImageButton
-    private lateinit var btnQuality: ImageButton
     private lateinit var btnShift: ImageButton
     private lateinit var btnSettings: ImageButton
 
@@ -316,7 +316,6 @@ class PlayerActivity : ComponentActivity() {
         btnRecPause = findViewById(R.id.btn_rec_pause)
         btnRecSnooze = findViewById(R.id.btn_rec_snooze)
         btnRecStop = findViewById(R.id.btn_rec_stop)
-        btnQuality = findViewById(R.id.btn_quality)
         btnShift = findViewById(R.id.btn_shift)
         btnSettings = findViewById(R.id.btn_settings)
     }
@@ -544,7 +543,6 @@ class PlayerActivity : ComponentActivity() {
         btnRecPause.setOnClickListener { toggleRecPause() }
         btnRecSnooze.setOnClickListener { snoozeRecording() }
         btnRecStop.setOnClickListener { stopRecording() }
-        btnQuality.setOnClickListener { openQualityPopup() }
         btnShift.setOnClickListener { openShiftPopup() }
         btnSettings.setOnClickListener { toggleSidePanel() }
         syncRecordButtons()
@@ -584,7 +582,7 @@ class PlayerActivity : ComponentActivity() {
     private fun firstActionButton(): View = when {
         recorder.isRecording -> btnRecPause
         recShowIndex == 0 -> btnRecord
-        else -> btnQuality
+        else -> btnShift
     }
 
     /** Пока открыт список или всплывашка, панель не должна уезжать. */
@@ -662,24 +660,6 @@ class PlayerActivity : ComponentActivity() {
         )
     }
 
-    private fun openQualityPopup() {
-        val views = ArrayList<View>()
-        views.add(popupIcon(R.drawable.ic_quality, getString(R.string.val_max)) {
-            setQuality(0)
-        })
-        views.add(popupIcon(R.drawable.ic_quality, getString(R.string.val_auto)) {
-            setQuality(1)
-        })
-        flatTracks(C.TRACK_TYPE_VIDEO).forEachIndexed { i, (g, t) ->
-            views.add(
-                popupIcon(R.drawable.ic_quality, videoLabel(g.getTrackFormat(t))) {
-                    setQuality(2 + i)
-                }
-            )
-        }
-        openPopup(views)
-    }
-
     // ------------------------------------------------------------ панель настроек
 
     private fun toggleSidePanel() {
@@ -699,6 +679,7 @@ class PlayerActivity : ComponentActivity() {
     private fun buildSideBar() {
         val inflater = LayoutInflater.from(this)
         val icons = intArrayOf(
+            R.drawable.ic_quality,
             R.drawable.ic_audio,
             R.drawable.ic_subs,
             R.drawable.ic_speed,
@@ -741,6 +722,7 @@ class PlayerActivity : ComponentActivity() {
 
     private fun rowTitle(i: Int): String = getString(
         when (i) {
+            ROW_QUALITY -> R.string.ctl_quality
             ROW_AUDIO -> R.string.ctl_audio
             ROW_SUBS -> R.string.ctl_subs
             ROW_SPEED -> R.string.ctl_speed
@@ -758,6 +740,7 @@ class PlayerActivity : ComponentActivity() {
     )
 
     private fun rowValue(i: Int): String = when (i) {
+        ROW_QUALITY -> qualityValue()
         ROW_AUDIO -> trackValue(C.TRACK_TYPE_AUDIO, audioIndex)
         ROW_SUBS -> if (subsIndex == 0) getString(R.string.val_off)
         else trackValue(C.TRACK_TYPE_TEXT, subsIndex - 1)
@@ -794,6 +777,7 @@ class PlayerActivity : ComponentActivity() {
 
     private fun stepRow(i: Int, dir: Int, fast: Boolean) {
         when (i) {
+            ROW_QUALITY -> stepQuality(dir)
             ROW_AUDIO -> stepTrack(C.TRACK_TYPE_AUDIO, dir)
             ROW_SUBS -> stepTrack(C.TRACK_TYPE_TEXT, dir)
             ROW_SPEED -> {
@@ -958,6 +942,21 @@ class PlayerActivity : ComponentActivity() {
      * кадр своим скейлером. Смысл в том, чтобы взять лучший из вариантов,
      * которые отдаёт провайдер.
      */
+    private fun qualityValue(): String {
+        if (qualityIndex == 0) return getString(R.string.val_max)
+        if (qualityIndex == 1) return getString(R.string.val_auto)
+        val list = flatTracks(C.TRACK_TYPE_VIDEO)
+        val at = qualityIndex - 2
+        if (at !in list.indices) return getString(R.string.val_max)
+        val (g, i) = list[at]
+        return videoLabel(g.getTrackFormat(i))
+    }
+
+    private fun stepQuality(dir: Int) {
+        val size = 2 + flatTracks(C.TRACK_TYPE_VIDEO).size
+        setQuality((qualityIndex + dir + size) % size)
+    }
+
     private fun setQuality(index: Int) {
         val p = player ?: return
         qualityIndex = index
