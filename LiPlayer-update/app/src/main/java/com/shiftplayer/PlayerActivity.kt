@@ -44,7 +44,6 @@ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.core.content.ContextCompat
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.DefaultTimeBar
-import androidx.media3.ui.PlayerControlView
 import androidx.media3.ui.PlayerView
 import java.io.File
 import java.text.SimpleDateFormat
@@ -56,13 +55,14 @@ import kotlin.math.roundToInt
 /**
  * Плеер с вертикальным сдвигом изображения БЕЗ масштабирования.
  *
- * Двигается только PlayerView (видео и субтитры) внутри чёрного контейнера
- * с clipChildren=true — пиксели не пересчитываются, кадр рисуется в другом
- * месте экрана. Панель управления вынесена отдельным PlayerControlView и
- * прибита к низу, поэтому сдвиг её не задевает.
+ * Двигается PlayerView внутри чёрного контейнера с clipChildren=true —
+ * пиксели не пересчитываются, кадр рисуется в другом месте экрана. Панель
+ * управления Media3 живёт внутри PlayerView и едет вместе с кадром: так
+ * было изначально, к этому поведению вернулись сознательно.
  *
- * Настройки — панель иконок слева: вверх/вниз выбирают параметр,
- * влево/вправо меняют значение не закрывая панель.
+ * Настройки — панель иконок справа: вверх/вниз выбирают параметр,
+ * влево/вправо меняют значение не закрывая панель. Открывается шестерёнкой,
+ * кнопкой MENU или стрелкой вправо.
  */
 @OptIn(UnstableApi::class)
 class PlayerActivity : ComponentActivity() {
@@ -120,7 +120,6 @@ class PlayerActivity : ComponentActivity() {
 
     private lateinit var root: FrameLayout
     private lateinit var playerView: PlayerView
-    private lateinit var controls: PlayerControlView
     private lateinit var sideScroll: ScrollView
     private lateinit var sideBar: LinearLayout
     private lateinit var clock: TextView
@@ -215,7 +214,6 @@ class PlayerActivity : ComponentActivity() {
 
         root = findViewById(R.id.root)
         playerView = findViewById(R.id.player_view)
-        controls = findViewById(R.id.controls)
         sideScroll = findViewById(R.id.side_scroll)
         sideBar = findViewById(R.id.side_bar)
         clock = findViewById(R.id.clock)
@@ -231,7 +229,8 @@ class PlayerActivity : ComponentActivity() {
         goFullscreen()
 
         playerView.resizeMode = ASPECTS[aspectIndex]
-        controls.showTimeoutMs = UI_TIMEOUT_MS.toInt()
+        playerView.controllerShowTimeoutMs = UI_TIMEOUT_MS.toInt()
+        playerView.setShowSubtitleButton(true)
 
         buildSideBar()
         styleControls()
@@ -330,7 +329,6 @@ class PlayerActivity : ComponentActivity() {
             .build()
 
         playerView.player = exo
-        controls.player = exo
 
         exo.addListener(object : Player.Listener {
             override fun onVideoSizeChanged(videoSize: VideoSize) =
@@ -407,7 +405,6 @@ class PlayerActivity : ComponentActivity() {
         if (recorder.isRecording) stopRecording()
         recStartAt = 0L
         playerView.player = null
-        controls.player = null
         player?.release()
         player = null
     }
@@ -694,15 +691,19 @@ class PlayerActivity : ComponentActivity() {
      */
     private fun styleControls() {
         // Плейлиста нет — кнопки «предыдущий/следующий» только мешают.
-        controls.setShowPreviousButton(false)
-        controls.setShowNextButton(false)
-        controls.setShowRewindButton(true)
-        controls.setShowFastForwardButton(true)
+        playerView.setShowPreviousButton(false)
+        playerView.setShowNextButton(false)
+        playerView.setShowRewindButton(true)
+        playerView.setShowFastForwardButton(true)
+
+        // Шестерёнка Media3 открывает нашу панель настроек.
+        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_settings)
+            ?.setOnClickListener { setBarVisible(true) }
 
         val accent = ContextCompat.getColor(this, R.color.brand_accent)
         val text = ContextCompat.getColor(this, R.color.brand_text)
 
-        controls.findViewById<DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.apply {
+        playerView.findViewById<DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.apply {
             // Шаг стрелок по самой полосе — крупный, кнопки остаются мелкими.
             setKeyTimeIncrement(SEEK_BAR_MS)
             setPlayedColor(accent)
@@ -711,10 +712,12 @@ class PlayerActivity : ComponentActivity() {
             setUnplayedColor(ContextCompat.getColor(this@PlayerActivity, R.color.brand_unplayed))
         }
 
-        tintTree(controls, text)
+        // Красим только сам контроллер, чтобы не задеть субтитры и буферизацию.
+        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_controller)
+            ?.let { tintTree(it, text) }
 
         // Кнопка воспроизведения — акцентная, чтобы глаз цеплялся за неё.
-        controls.findViewById<ImageView>(androidx.media3.ui.R.id.exo_play_pause)
+        playerView.findViewById<ImageView>(androidx.media3.ui.R.id.exo_play_pause)
             ?.setColorFilter(accent)
     }
 
@@ -1004,16 +1007,18 @@ class PlayerActivity : ComponentActivity() {
             return super.dispatchKeyEvent(event)
         }
 
-        // Закрыта: MENU и «влево» открывают её, остальное уходит панели снизу.
+        // Закрыта: MENU и «вправо» открывают её — панель настроек справа.
         when (code) {
             KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_SETTINGS -> {
                 setBarVisible(true); return true
             }
-            KeyEvent.KEYCODE_DPAD_LEFT -> {
-                if (!controls.isFullyVisible) { setBarVisible(true); return true }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                if (!playerView.isControllerFullyVisible) {
+                    setBarVisible(true); return true
+                }
             }
         }
-        if (!controls.isFullyVisible) controls.show()
+        if (!playerView.isControllerFullyVisible) playerView.showController()
         return super.dispatchKeyEvent(event)
     }
 

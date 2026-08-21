@@ -2,9 +2,7 @@
 <!--
   root         : чёрный контейнер, обрезает всё, что вышло за экран
   player_view  : ТОЛЬКО видео и субтитры, двигается через translationY
-  controls     : панель управления вынесена наружу и прибита к низу,
-                 поэтому сдвиг кадра её не таскает
-  side_scroll  : панель иконок слева, прокручивается — рядов много
+  side_scroll  : панель настроек справа, прокручивается — рядов много
   corner_stack : часы и индикатор записи, правый верхний угол
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -23,15 +21,15 @@
         android:background="@android:color/black"
         app:surface_type="surface_view"
         app:resize_mode="fit"
-        app:use_controller="false"
+        app:use_controller="true"
         app:show_buffering="when_playing" />
 
     <ScrollView
         android:id="@+id/side_scroll"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="left|center_vertical"
-        android:layout_marginLeft="24dp"
+        android:layout_gravity="right|center_vertical"
+        android:layout_marginRight="24dp"
         android:layout_marginTop="16dp"
         android:layout_marginBottom="16dp"
         android:background="@drawable/bar_bg"
@@ -117,12 +115,5 @@
         android:textSize="20sp"
         android:visibility="gone" />
 
-    <androidx.media3.ui.PlayerControlView
-        android:id="@+id/controls"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:background="@drawable/panel_bg"
-        android:paddingTop="4dp" />
 
 </FrameLayout>
