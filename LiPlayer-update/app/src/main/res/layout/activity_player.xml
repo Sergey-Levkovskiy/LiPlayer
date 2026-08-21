@@ -7,6 +7,7 @@
   popup       : всплывающее меню НАД панелью действий
   action_bar  : четыре действия внизу справа
   side_scroll : остальные настройки, справа по центру
+  aux_panel   : список доступных значений для выбранного ряда
 
   Навигация — штатным фокусом Android, без ручной маршрутизации кнопок:
   focusable + nextFocus, а не dispatchKeyEvent.
@@ -252,27 +253,46 @@
     </LinearLayout>
 
     <!-- ================================== остальные настройки, справа -->
-    <ScrollView
-        android:id="@+id/side_scroll"
+    <!-- Настройки и подсказка к выбранному ряду стоят рядом: подсказка
+         слева от панели, поэтому оба лежат в одной горизонтальной ленте. -->
+    <LinearLayout
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="right|center_vertical"
+        android:layout_height="match_parent"
+        android:layout_gravity="right"
         android:layout_marginRight="24dp"
-        android:layout_marginTop="16dp"
-        android:layout_marginBottom="16dp"
-        android:background="@drawable/bar_bg"
-        android:scrollbars="none"
-        android:visibility="gone">
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingTop="16dp"
+        android:paddingBottom="16dp">
 
         <LinearLayout
-            android:id="@+id/side_bar"
+            android:id="@+id/aux_panel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginRight="10dp"
+            android:background="@drawable/popup_bg"
             android:orientation="vertical"
-            android:paddingLeft="8dp"
-            android:paddingRight="8dp"
-            android:paddingTop="8dp"
-            android:paddingBottom="8dp" />
-    </ScrollView>
+            android:padding="8dp"
+            android:visibility="gone" />
+
+        <ScrollView
+            android:id="@+id/side_scroll"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bar_bg"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/side_bar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingLeft="8dp"
+                android:paddingRight="8dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp" />
+        </ScrollView>
+    </LinearLayout>
 
 </FrameLayout>

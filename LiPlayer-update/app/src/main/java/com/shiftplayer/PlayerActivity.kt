@@ -148,6 +148,7 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var actionBar: LinearLayout
     private lateinit var sideScroll: ScrollView
     private lateinit var sideBar: LinearLayout
+    private lateinit var auxPanel: LinearLayout
     private lateinit var recBadge: LinearLayout
     private lateinit var recDot: ImageView
     private lateinit var recSize: TextView
@@ -188,6 +189,14 @@ class PlayerActivity : ComponentActivity() {
 
     /** 0 — кнопка записи в панели показана, 1 — скрыта. */
     private var recShowIndex = 0
+
+    /**
+     * Ручное смещение «захватило» стрелки вверх/вниз.
+     *
+     * Без этого режима вверх/вниз означали бы переход между рядами, и кадр
+     * пришлось бы двигать влево/вправо — неинтуитивно для вертикали.
+     */
+    private var shiftCapture = false
 
     private var recStartAt = 0L
     private var recStopAt = 0L
@@ -308,6 +317,7 @@ class PlayerActivity : ComponentActivity() {
         actionBar = findViewById(R.id.action_bar)
         sideScroll = findViewById(R.id.side_scroll)
         sideBar = findViewById(R.id.side_bar)
+        auxPanel = findViewById(R.id.aux_panel)
         recBadge = findViewById(R.id.rec_badge)
         recDot = findViewById(R.id.rec_dot)
         recSize = findViewById(R.id.rec_size)
@@ -601,6 +611,8 @@ class PlayerActivity : ComponentActivity() {
         popup.removeAllViews()
         drawer.visibility = View.GONE
         sideScroll.visibility = View.GONE
+        auxPanel.visibility = View.GONE
+        shiftCapture = false
     }
 
     private fun hasPanelFocus(): Boolean {
@@ -665,6 +677,8 @@ class PlayerActivity : ComponentActivity() {
     private fun toggleSidePanel() {
         if (sideScroll.visibility == View.VISIBLE) {
             sideScroll.visibility = View.GONE
+            auxPanel.visibility = View.GONE
+            shiftCapture = false
             pinController(false)
             btnSettings.requestFocus()
         } else {
@@ -673,6 +687,7 @@ class PlayerActivity : ComponentActivity() {
             sideScroll.visibility = View.VISIBLE
             pinController(true)
             rowViews.firstOrNull()?.requestFocus()
+            updateAux(0)
         }
     }
 
@@ -699,17 +714,119 @@ class PlayerActivity : ComponentActivity() {
             row.findViewById<ImageView>(R.id.row_icon).setImageResource(icons[i])
             row.setOnKeyListener { _, code, event ->
                 if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-                when (code) {
-                    KeyEvent.KEYCODE_DPAD_LEFT -> { stepRow(i, -1, event.repeatCount > 4); true }
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> { stepRow(i, 1, event.repeatCount > 4); true }
+                val fast = event.repeatCount > 4
+
+                // В режиме захвата вертикальные стрелки двигают кадр,
+                // а не переводят фокус на соседний ряд.
+                if (i == ROW_SHIFT_MANUAL && shiftCapture) {
+                    when (code) {
+                        KeyEvent.KEYCODE_DPAD_UP -> { nudgeManual(-1, fast); true }
+                        KeyEvent.KEYCODE_DPAD_DOWN -> { nudgeManual(1, fast); true }
+                        KeyEvent.KEYCODE_DPAD_LEFT -> { nudgeManual(-1, fast); true }
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> { nudgeManual(1, fast); true }
+                        KeyEvent.KEYCODE_DPAD_CENTER,
+                        KeyEvent.KEYCODE_ENTER -> { setShiftCapture(false); true }
+                        else -> false
+                    }
+                } else when (code) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> { stepRow(i, -1, fast); true }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> { stepRow(i, 1, fast); true }
                     else -> false
                 }
             }
-            row.setOnClickListener { stepRow(i, 1, false) }
+            row.setOnClickListener {
+                if (i == ROW_SHIFT_MANUAL) setShiftCapture(!shiftCapture)
+                else stepRow(i, 1, false)
+            }
+            row.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) {
+                    if (shiftCapture && i != ROW_SHIFT_MANUAL) setShiftCapture(false)
+                    updateAux(i)
+                }
+            }
             rowViews.add(row)
             rowLabels.add(row.findViewById(R.id.row_label))
             sideBar.addView(row)
         }
+    }
+
+    private fun setShiftCapture(on: Boolean) {
+        shiftCapture = on
+        if (on) shiftMode = 3
+        updateAux(ROW_SHIFT_MANUAL)
+        refreshRow(ROW_SHIFT_MANUAL)
+    }
+
+    private fun nudgeManual(dir: Int, fast: Boolean) {
+        shiftMode = 3
+        shiftPx += dir * (if (fast) 24f else 4f)
+        applyShift(showHud = false)
+        refreshRow(ROW_SHIFT_MANUAL)
+        updateAux(ROW_SHIFT_MANUAL)
+        keepUiAlive()
+    }
+
+    /**
+     * Подсказка слева от выбранного ряда.
+     *
+     * У дорожек и субтитров — весь список сразу, чтобы не перебирать
+     * вслепую. У ручного смещения — текущее значение и что нажимать.
+     */
+    private fun updateAux(row: Int) {
+        when (row) {
+            ROW_AUDIO -> {
+                val list = flatTracks(C.TRACK_TYPE_AUDIO)
+                showAux(
+                    list.mapIndexed { i, (g, t) -> trackLabel(g.getTrackFormat(t), i) },
+                    audioIndex
+                )
+            }
+            ROW_SUBS -> {
+                val labels = ArrayList<String>()
+                labels.add(getString(R.string.val_off))
+                flatTracks(C.TRACK_TYPE_TEXT).forEachIndexed { i, (g, t) ->
+                    labels.add(trackLabel(g.getTrackFormat(t), i))
+                }
+                showAux(labels, subsIndex)
+            }
+            ROW_QUALITY -> {
+                val labels = arrayListOf(
+                    getString(R.string.val_max), getString(R.string.val_auto)
+                )
+                flatTracks(C.TRACK_TYPE_VIDEO).forEach { (g, t) ->
+                    labels.add(videoLabel(g.getTrackFormat(t)))
+                }
+                showAux(labels, qualityIndex)
+            }
+            ROW_SHIFT_MANUAL -> showAux(
+                listOf(
+                    getString(R.string.shift_now, shiftPx.roundToInt()),
+                    getString(R.string.shift_limit, safeMarginPx.roundToInt()),
+                    getString(
+                        if (shiftCapture) R.string.shift_capture_on
+                        else R.string.shift_capture_off
+                    )
+                ),
+                if (shiftCapture) 2 else -1
+            )
+            else -> auxPanel.visibility = View.GONE
+        }
+    }
+
+    private fun showAux(labels: List<String>, current: Int) {
+        auxPanel.removeAllViews()
+        if (labels.isEmpty()) {
+            auxPanel.visibility = View.GONE
+            return
+        }
+        val inflater = LayoutInflater.from(this)
+        labels.forEachIndexed { i, s ->
+            val tv = inflater.inflate(R.layout.row_aux, auxPanel, false) as TextView
+            tv.text = s
+            if (i == current) tv.setBackgroundResource(R.drawable.row_selected)
+            auxPanel.addView(tv)
+        }
+        auxPanel.visibility = View.VISIBLE
     }
 
     private fun refreshAllRows() {
@@ -795,11 +912,7 @@ class PlayerActivity : ComponentActivity() {
                 saveInt("screen", screenIndex)
                 applyScreenSize()
             }
-            ROW_SHIFT_MANUAL -> {
-                shiftMode = 3
-                shiftPx += dir * (if (fast) 24f else 4f)
-                applyShift(showHud = true)
-            }
+            ROW_SHIFT_MANUAL -> nudgeManual(dir, fast)
             ROW_CLOCK -> {
                 clockSize = (clockSize + dir + CLOCK_SP.size) % CLOCK_SP.size
                 saveInt("clock_size", clockSize)
@@ -834,6 +947,7 @@ class PlayerActivity : ComponentActivity() {
             }
         }
         refreshRow(i)
+        updateAux(i)
         keepUiAlive()
     }
 
@@ -1302,6 +1416,7 @@ class PlayerActivity : ComponentActivity() {
         // BACK закрывает открытое, а не выходит из плеера.
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             when {
+                shiftCapture -> { setShiftCapture(false); return true }
                 popup.visibility == View.VISIBLE -> {
                     popup.visibility = View.GONE
                     popup.removeAllViews()
