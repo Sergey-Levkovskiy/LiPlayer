@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
+
+    <LinearLayout
+        android:id="@+id/rec_row"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:background="@drawable/btn_focus"
+        android:focusable="true"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="7dp">
+
+        <ImageView
+            android:id="@+id/rec_thumb"
+            android:layout_width="96dp"
+            android:layout_height="54dp"
+            android:background="#FF000000"
+            android:scaleType="centerCrop"
+            android:src="@drawable/ic_video" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginLeft="12dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/rec_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="middle"
+                android:singleLine="true"
+                android:textColor="@color/brand_text"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/rec_meta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:singleLine="true"
+                android:textColor="#8AFFFFFF"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/rec_delete"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_marginLeft="6dp"
+        android:background="@drawable/btn_focus"
+        android:contentDescription="@string/del_ok"
+        android:focusable="true"
+        android:padding="10dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_delete" />
+</LinearLayout>

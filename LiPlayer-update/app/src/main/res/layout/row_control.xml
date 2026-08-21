@@ -1,15 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ряд панели настроек. Панель справа, поэтому подпись идёт ПЕРЕД иконкой,
-     а сами иконки выровнены по правому краю. -->
+<!-- Ряд панели настроек. Панель справа: подпись перед иконкой, иконки
+     выровнены по правому краю. Ряд фокусируемый — стрелки влево/вправо
+     ловит OnKeyListener, вверх/вниз обрабатывает сам Android. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:background="@drawable/btn_focus"
+    android:focusable="true"
     android:gravity="center_vertical|right"
     android:orientation="horizontal"
-    android:paddingLeft="10dp"
-    android:paddingRight="6dp"
-    android:paddingTop="4dp"
-    android:paddingBottom="4dp">
+    android:paddingLeft="12dp"
+    android:paddingRight="8dp"
+    android:paddingTop="7dp"
+    android:paddingBottom="7dp">
 
     <TextView
         android:id="@+id/row_label"
@@ -17,11 +20,10 @@
         android:layout_height="wrap_content"
         android:layout_marginRight="12dp"
         android:textColor="#FFFFFF"
-        android:textSize="18sp"
-        android:visibility="gone" />
+        android:textSize="17sp" />
 
     <ImageView
         android:id="@+id/row_icon"
-        android:layout_width="28dp"
-        android:layout_height="28dp" />
+        android:layout_width="26dp"
+        android:layout_height="26dp" />
 </LinearLayout>
