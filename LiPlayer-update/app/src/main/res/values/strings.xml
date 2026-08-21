@@ -13,7 +13,12 @@
     <string name="ctl_subs">Субтитры</string>
     <string name="ctl_speed">Скорость</string>
     <string name="ctl_aspect">Кадр</string>
+    <string name="ctl_clock">Часы</string>
+    <string name="ctl_clock_dim">Яркость часов</string>
     <string name="ctl_record">Запись</string>
+    <string name="ctl_rec_delay">Старт записи</string>
+    <string name="ctl_rec_dur">Длительность</string>
+    <string name="ctl_rec_dir">Куда писать</string>
 
     <string name="row_label">%1$s: %2$s</string>
 
@@ -22,22 +27,39 @@
     <string name="val_off">Выкл</string>
     <string name="val_none">нет</string>
     <string name="val_px">%1$d px</string>
+    <string name="val_speed">%1$s×</string>
+    <string name="val_res">%1$d×%2$d</string>
+    <string name="val_res_rate">%1$d×%2$d · %3$.1f Mbps</string>
+    <string name="val_track_n">Дорожка %1$d</string>
+    <string name="val_percent">%1$d %%</string>
+    <string name="val_minutes">%1$d мин</string>
+
     <string name="shift_center">Центр</string>
     <string name="shift_top">Вверх до края</string>
     <string name="shift_bottom">Вниз до края</string>
     <string name="shift_manual">Вручную</string>
     <string name="shift_manual_on">Вручную ↑↓ %1$d px</string>
-    <string name="val_speed">%1$s×</string>
-    <string name="val_res">%1$d×%2$d</string>
-    <string name="val_res_rate">%1$d×%2$d · %3$.1f Mbps</string>
-    <string name="val_track_n">Дорожка %1$d</string>
 
     <string name="aspect_fit">По размеру</string>
     <string name="aspect_fill">Растянуть</string>
     <string name="aspect_zoom">Обрезать</string>
 
+    <string name="clock_small">Мелкие</string>
+    <string name="clock_medium">Средние</string>
+    <string name="clock_large">Крупные</string>
+
+    <string name="rec_now">Сейчас</string>
+    <string name="rec_at">%1$s (через %2$d мин)</string>
+    <string name="rec_unlimited">Без лимита</string>
+    <string name="rec_armed">старт через %1$s</string>
+    <string name="rec_left">%1$s · осталось %2$s</string>
+    <string name="rec_scheduled">Запись начнётся в %1$s</string>
+    <string name="rec_cancelled">Отложенная запись отменена</string>
     <string name="rec_started">Запись пошла: %1$s</string>
     <string name="rec_stopped">Записано %1$s → %2$s</string>
     <string name="rec_failed">Не удалось начать запись</string>
     <string name="rec_empty">Запись пустая, файл удалён</string>
+
+    <string name="dir_internal">Внутренняя память</string>
+    <string name="dir_removable">Накопитель %1$d</string>
 </resources>

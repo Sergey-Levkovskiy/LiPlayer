@@ -23,7 +23,11 @@ import java.util.Locale
  * start/stop — с главного, поэтому доступ к потоку записи под замком.
  */
 @UnstableApi
-class StreamRecorder(private val dir: File) : DataSink {
+class StreamRecorder(dir: File) : DataSink {
+
+    /** Куда писать. Меняется из настроек между записями. */
+    @Volatile
+    var dir: File = dir
 
     private val lock = Any()
 
