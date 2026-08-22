@@ -2,6 +2,9 @@
 <resources>
     <string name="app_name">LiPlayer</string>
     <string name="err_playback">Ошибка воспроизведения: %1$s</string>
+    <string name="err_retry">Обрыв потока, переподключение…</string>
+    <string name="err_gave_up">Не удалось восстановить поток: %1$s</string>
+    <string name="resumed_at">Продолжаем с %1$s</string>
 
     <string name="hud_shift">Сдвиг: %1$d px</string>
     <string name="hud_safe">предел: ±%1$d px</string>

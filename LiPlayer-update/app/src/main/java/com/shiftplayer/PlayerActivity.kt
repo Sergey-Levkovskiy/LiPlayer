@@ -93,6 +93,12 @@ class PlayerActivity : ComponentActivity() {
          */
         const val PANEL_TIMEOUT_MS = 14_000L
 
+        /** Сколько раз пробуем поднять оборвавшийся поток. */
+        const val MAX_RETRIES = 5
+
+        /** Позиция пишется на диск каждые N тиков по секунде. */
+        const val SAVE_EVERY_TICKS = 5
+
         /**
          * Диагональ панели, для которой «Полный» размер = 100 %.
          *
@@ -219,6 +225,9 @@ class PlayerActivity : ComponentActivity() {
      */
     private var shiftCapture = false
 
+    private var retries = 0
+    private var tickCount = 0
+
     private var recStartAt = 0L
     private var recStopAt = 0L
     private var recResumeAt = 0L
@@ -239,6 +248,12 @@ class PlayerActivity : ComponentActivity() {
         override fun run() {
             val now = System.currentTimeMillis()
             if (clockSize > 0) clock.text = clockFmt.format(Date(now))
+
+            // Пишем позицию на ходу: onStop не вызывается ни при обрыве
+            // потока, ни когда систему убивает приложение.
+            if (++tickCount % SAVE_EVERY_TICKS == 0 && player?.isPlaying == true) {
+                savePosition()
+            }
 
             if (recStartAt in 1..now) {
                 recStartAt = 0L
@@ -423,12 +438,15 @@ class PlayerActivity : ComponentActivity() {
                 if (sideScroll.visibility == View.VISIBLE) refreshAllRows()
             }
 
+            override fun onPlaybackStateChanged(state: Int) {
+                // Поток поднялся — счётчик попыток обнуляем.
+                if (state == Player.STATE_READY) retries = 0
+            }
+
             override fun onPlayerError(error: PlaybackException) {
-                Toast.makeText(
-                    this@PlayerActivity,
-                    getString(R.string.err_playback, error.errorCodeName),
-                    Toast.LENGTH_LONG
-                ).show()
+                // Сначала фиксируем позицию, потом пробуем поднять поток.
+                savePosition()
+                scheduleRetry(error)
             }
         })
 
@@ -436,7 +454,12 @@ class PlayerActivity : ComponentActivity() {
         exo.prepare()
 
         val saved = prefs?.getLong(posKey(uri), 0L) ?: 0L
-        if (saved > 10_000L) exo.seekTo(saved)
+        if (saved > 10_000L) {
+            exo.seekTo(saved)
+            Toast.makeText(
+                this, getString(R.string.resumed_at, fmtPosition(saved)), Toast.LENGTH_SHORT
+            ).show()
+        }
 
         exo.setPlaybackSpeed(SPEEDS[speedIndex])
         exo.playWhenReady = true
@@ -474,7 +497,30 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
-    private fun posKey(uri: Uri) = "pos_" + uri.toString().hashCode()
+    /**
+     * Устойчивый ключ позиции.
+     *
+     * Полный URL как ключ не годится: TorrServe и подобные меняют порт,
+     * номер сессии и порядок параметров между запусками, поэтому позиция
+     * терялась, хотя была сохранена. Берём то, что не меняется — хеш
+     * раздачи с номером файла, иначе имя файла.
+     */
+    private fun posKey(uri: Uri): String {
+        val id = try {
+            val hash = uri.getQueryParameter("link") ?: uri.getQueryParameter("hash")
+            val index = uri.getQueryParameter("index") ?: ""
+            val name = uri.lastPathSegment ?: ""
+            when {
+                !hash.isNullOrEmpty() -> "$hash#$index"
+                name.isNotEmpty() -> name
+                else -> uri.toString()
+            }
+        } catch (e: UnsupportedOperationException) {
+            // Непрозрачный URI — параметров у него нет.
+            uri.toString()
+        }
+        return "pos_" + id.hashCode()
+    }
 
     private fun savePosition() {
         val p = player ?: return
@@ -486,8 +532,40 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Обрыв потока — не повод терять место. Переподключаемся с растущей
+     * задержкой и возвращаемся туда же, где остановились.
+     */
+    private fun scheduleRetry(error: PlaybackException) {
+        if (retries >= MAX_RETRIES) {
+            Toast.makeText(
+                this, getString(R.string.err_gave_up, error.errorCodeName),
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        if (retries == 0) {
+            Toast.makeText(this, R.string.err_retry, Toast.LENGTH_SHORT).show()
+        }
+        val delay = 2_000L shl retries
+        retries++
+        ui.removeCallbacks(retryPlayback)
+        ui.postDelayed(retryPlayback, delay)
+    }
+
+    private val retryPlayback = Runnable {
+        val p = player ?: return@Runnable
+        val uri = currentUri ?: return@Runnable
+        val saved = prefs?.getLong(posKey(uri), 0L) ?: 0L
+        p.prepare()
+        if (saved > 10_000L) p.seekTo(saved)
+        p.playWhenReady = true
+    }
+
     private fun releasePlayer() {
         if (recorder.isRecording) stopRecording()
+        ui.removeCallbacks(retryPlayback)
+        retries = 0
         recStartAt = 0L
         playerView.player = null
         player?.release()
@@ -1464,6 +1542,15 @@ class PlayerActivity : ComponentActivity() {
     }
 
     // ----------------------------------------------------------------- формат
+
+    private fun fmtPosition(ms: Long): String {
+        val total = ms / 1000L
+        val h = total / 3600L
+        val m = (total % 3600L) / 60L
+        val s = total % 60L
+        return if (h > 0) String.format(Locale.US, "%d:%02d:%02d", h, m, s)
+        else String.format(Locale.US, "%d:%02d", m, s)
+    }
 
     private fun fmtClock(ms: Long): String {
         val total = (ms.coerceAtLeast(0L) / 1000L).toInt()
