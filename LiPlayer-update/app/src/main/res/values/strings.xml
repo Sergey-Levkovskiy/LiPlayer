@@ -20,6 +20,7 @@
     <string name="ctl_rec_dur">Длительность</string>
     <string name="ctl_rec_dir">Куда писать</string>
     <string name="ctl_screen">Размер экрана</string>
+    <string name="ctl_position">Положение</string>
     <string name="ctl_rec_show">Кнопка записи</string>
     <string name="val_shown">Показывать</string>
     <string name="val_hidden">Скрыта</string>
@@ -35,6 +36,12 @@
 
     <string name="screen_full">Полный</string>
     <string name="screen_inches">%1$d″</string>
+    <string name="pos_center">Центр</string>
+    <string name="pos_top_left">Сверху слева</string>
+    <string name="pos_top_right">Сверху справа</string>
+    <string name="pos_bottom_left">Снизу слева</string>
+    <string name="pos_bottom_right">Снизу справа</string>
+    <string name="pos_na">только при уменьшении</string>
 
     <string name="drawer_empty">Записей пока нет. Начните запись кнопкой в панели действий.</string>
 
