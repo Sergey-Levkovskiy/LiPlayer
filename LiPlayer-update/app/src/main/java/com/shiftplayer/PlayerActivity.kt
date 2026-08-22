@@ -62,9 +62,12 @@ import kotlin.math.roundToInt
 /**
  * Плеер с вертикальным сдвигом изображения БЕЗ масштабирования.
  *
- * PlayerView переставляется внутри чёрного контейнера с clipChildren=true:
- * меняется его положение в разметке, а не трансформация. Пиксели не
- * пересчитываются — кадр просто рисуется в другом месте экрана.
+ * Двигается и уменьшается ТОЛЬКО внутренний контейнер Media3 с видео и
+ * субтитрами (`exo_content_frame`) — через положение в разметке, а не
+ * трансформацией: SurfaceView внутри трансформации не слушается. Панель
+ * управления остаётся внизу экрана и со сдвигом не едет.
+ *
+ * Пиксели не пересчитываются — кадр просто рисуется в другом месте.
  *
  * Управление: четыре действия внизу справа (запись, качество, сдвиг,
  * настройки), список записей слева сверху. Навигация — штатным фокусом
@@ -161,6 +164,15 @@ class PlayerActivity : ComponentActivity() {
 
     private lateinit var root: FrameLayout
     private lateinit var playerView: PlayerView
+
+    /**
+     * Что именно двигаем и уменьшаем — внутренний контейнер Media3 с видео
+     * и субтитрами (`exo_content_frame`), а не весь PlayerView.
+     *
+     * Панель управления (`exo_controller`) этому контейнеру сестра, а не
+     * потомок, поэтому она остаётся внизу экрана и со сдвигом не едет.
+     */
+    private lateinit var videoFrame: View
     private lateinit var leftTop: LinearLayout
     private lateinit var btnLibrary: ImageButton
     private lateinit var clock: TextView
@@ -342,6 +354,8 @@ class PlayerActivity : ComponentActivity() {
     private fun bindViews() {
         root = findViewById(R.id.root)
         playerView = findViewById(R.id.player_view)
+        videoFrame = playerView.findViewById(androidx.media3.ui.R.id.exo_content_frame)
+            ?: playerView
         leftTop = findViewById(R.id.left_top)
         btnLibrary = findViewById(R.id.btn_library)
         clock = findViewById(R.id.clock)
@@ -626,8 +640,8 @@ class PlayerActivity : ComponentActivity() {
 
     private fun recomputeGeometry() {
         val videoSize = lastVideo ?: return
-        val viewW = playerView.width.toFloat()
-        val viewH = playerView.height.toFloat()
+        val viewW = videoFrame.width.toFloat()
+        val viewH = videoFrame.height.toFloat()
         if (viewW <= 0f || viewH <= 0f || videoSize.height == 0) return
 
         val aspect = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
@@ -651,7 +665,7 @@ class PlayerActivity : ComponentActivity() {
     // ------------------------------------------------------------------- shift
 
     private fun applyShift(showHud: Boolean) {
-        val viewH = (if (playerView.height > 0) playerView.height else root.height).toFloat()
+        val viewH = (if (videoFrame.height > 0) videoFrame.height else root.height).toFloat()
         // Ручному режиму даём весь ход: именно так выносят за экран полосы,
         // впечатанные в кадр. Авто-значения и так малы — они от полос.
         val limit = if (shiftMode == 3) viewH else viewH / 2f
@@ -671,14 +685,14 @@ class PlayerActivity : ComponentActivity() {
      * положения в разметке поверхность переносит по-настоящему.
      */
     private fun applyGeometry() {
-        val w = root.width
-        val h = root.height
+        val w = playerView.width
+        val h = playerView.height
         if (w <= 0 || h <= 0) return
 
         val inches = SCREEN_IN[screenIndex]
         val scale = if (inches == 0) 1f else inches.toFloat() / BASE_DIAGONAL_IN
 
-        val lp = playerView.layoutParams as FrameLayout.LayoutParams
+        val lp = videoFrame.layoutParams as? FrameLayout.LayoutParams ?: return
         lp.width = (w * scale).roundToInt()
         lp.height = (h * scale).roundToInt()
         lp.gravity = if (inches == 0) Gravity.CENTER else POSITIONS[posIndex]
@@ -692,10 +706,11 @@ class PlayerActivity : ComponentActivity() {
             lp.topMargin = shift
             lp.bottomMargin = 0
         }
-        playerView.layoutParams = lp
+        videoFrame.layoutParams = lp
 
         // Остатки прежнего способа сдвига, иначе сложились бы дважды.
         playerView.translationY = 0f
+        videoFrame.translationY = 0f
     }
 
     /**
@@ -752,9 +767,9 @@ class PlayerActivity : ComponentActivity() {
     private fun applyScreenSize() {
         root.post {
             applyGeometry()
-            // Полоса и предел сдвига считаются от вьюхи, а не от экрана,
-            // поэтому пересчёт — только после того, как вьюху разложили.
-            playerView.post { recomputeGeometry() }
+            // Полоса и предел сдвига считаются от контейнера видео, поэтому
+            // пересчёт — только после того, как его разложили.
+            videoFrame.post { recomputeGeometry() }
         }
     }
 
