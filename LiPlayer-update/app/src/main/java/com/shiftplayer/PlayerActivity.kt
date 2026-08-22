@@ -103,6 +103,15 @@ class PlayerActivity : ComponentActivity() {
         /** Варианты уменьшения картинки, дюймы по диагонали. */
         val SCREEN_IN = intArrayOf(0, 85, 75, 65, 55)
 
+        /** Куда прижимать уменьшенную картинку. */
+        val POSITIONS = intArrayOf(
+            Gravity.CENTER,
+            Gravity.TOP or Gravity.LEFT,
+            Gravity.TOP or Gravity.RIGHT,
+            Gravity.BOTTOM or Gravity.LEFT,
+            Gravity.BOTTOM or Gravity.RIGHT
+        )
+
         val SPEEDS = floatArrayOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
 
         val ASPECTS = intArrayOf(
@@ -131,15 +140,16 @@ class PlayerActivity : ComponentActivity() {
         const val ROW_SPEED = 3
         const val ROW_ASPECT = 4
         const val ROW_SCREEN = 5
-        const val ROW_SHIFT_MANUAL = 6
-        const val ROW_CLOCK = 7
-        const val ROW_CLOCK_DIM = 8
-        const val ROW_REC_SHOW = 9
-        const val ROW_REC_DELAY = 10
-        const val ROW_REC_DUR = 11
-        const val ROW_SNOOZE = 12
-        const val ROW_REC_DIR = 13
-        const val ROW_COUNT = 14
+        const val ROW_POSITION = 6
+        const val ROW_SHIFT_MANUAL = 7
+        const val ROW_CLOCK = 8
+        const val ROW_CLOCK_DIM = 9
+        const val ROW_REC_SHOW = 10
+        const val ROW_REC_DELAY = 11
+        const val ROW_REC_DUR = 12
+        const val ROW_SNOOZE = 13
+        const val ROW_REC_DIR = 14
+        const val ROW_COUNT = 15
     }
 
     private lateinit var root: FrameLayout
@@ -190,6 +200,7 @@ class PlayerActivity : ComponentActivity() {
     private var audioIndex = 0
     private var subsIndex = 0
     private var screenIndex = 0
+    private var posIndex = 0
     private var clockSize = 0
     private var clockDim = 2
     private var recDelayIndex = 0
@@ -348,6 +359,7 @@ class PlayerActivity : ComponentActivity() {
         speedIndex = p.getInt("speed", 2).coerceIn(0, SPEEDS.size - 1)
         aspectIndex = p.getInt("aspect", 0).coerceIn(0, ASPECTS.size - 1)
         screenIndex = p.getInt("screen", 0).coerceIn(0, SCREEN_IN.size - 1)
+        posIndex = p.getInt("screen_pos", 0).coerceIn(0, POSITIONS.size - 1)
         clockSize = p.getInt("clock_size", 0).coerceIn(0, CLOCK_SP.size - 1)
         clockDim = p.getInt("clock_dim", 2).coerceIn(0, CLOCK_ALPHA.size - 1)
         recDelayIndex = p.getInt("rec_delay", 0).coerceIn(0, REC_DELAYS.size - 1)
@@ -574,7 +586,8 @@ class PlayerActivity : ComponentActivity() {
             val lp = playerView.layoutParams as FrameLayout.LayoutParams
             lp.width = (w * scale).roundToInt()
             lp.height = (h * scale).roundToInt()
-            lp.gravity = Gravity.CENTER
+            // При полном размере прижимать некуда — вьюха и так во весь экран.
+            lp.gravity = if (inches == 0) Gravity.CENTER else POSITIONS[posIndex]
             playerView.layoutParams = lp
 
             // Полоса и предел сдвига считаются от вьюхи, а не от экрана.
@@ -740,6 +753,7 @@ class PlayerActivity : ComponentActivity() {
             R.drawable.ic_speed,
             R.drawable.ic_aspect,
             R.drawable.ic_screen,
+            R.drawable.ic_position,
             R.drawable.ic_shift,
             R.drawable.ic_clock,
             R.drawable.ic_clock_dim,
@@ -838,6 +852,10 @@ class PlayerActivity : ComponentActivity() {
                 }
                 showAux(labels, qualityIndex)
             }
+            ROW_POSITION -> showAux(
+                (POSITIONS.indices).map { positionLabel(it) },
+                if (SCREEN_IN[screenIndex] == 0) -1 else posIndex
+            )
             ROW_SHIFT_MANUAL -> showAux(
                 listOf(
                     getString(R.string.shift_now, shiftPx.roundToInt()),
@@ -852,6 +870,16 @@ class PlayerActivity : ComponentActivity() {
             else -> auxPanel.visibility = View.GONE
         }
     }
+
+    private fun positionLabel(index: Int): String = getString(
+        when (index) {
+            1 -> R.string.pos_top_left
+            2 -> R.string.pos_top_right
+            3 -> R.string.pos_bottom_left
+            4 -> R.string.pos_bottom_right
+            else -> R.string.pos_center
+        }
+    )
 
     private fun showAux(labels: List<String>, current: Int) {
         auxPanel.removeAllViews()
@@ -885,6 +913,7 @@ class PlayerActivity : ComponentActivity() {
             ROW_SPEED -> R.string.ctl_speed
             ROW_ASPECT -> R.string.ctl_aspect
             ROW_SCREEN -> R.string.ctl_screen
+            ROW_POSITION -> R.string.ctl_position
             ROW_SHIFT_MANUAL -> R.string.shift_manual
             ROW_CLOCK -> R.string.ctl_clock
             ROW_CLOCK_DIM -> R.string.ctl_clock_dim
@@ -911,6 +940,8 @@ class PlayerActivity : ComponentActivity() {
         )
         ROW_SCREEN -> if (SCREEN_IN[screenIndex] == 0) getString(R.string.screen_full)
         else getString(R.string.screen_inches, SCREEN_IN[screenIndex])
+        ROW_POSITION -> if (SCREEN_IN[screenIndex] == 0) getString(R.string.pos_na)
+        else positionLabel(posIndex)
         ROW_SHIFT_MANUAL -> getString(R.string.val_px, shiftPx.roundToInt())
         ROW_CLOCK -> when (clockSize) {
             0 -> getString(R.string.val_off)
@@ -950,6 +981,12 @@ class PlayerActivity : ComponentActivity() {
             ROW_SCREEN -> {
                 screenIndex = (screenIndex + dir + SCREEN_IN.size) % SCREEN_IN.size
                 saveInt("screen", screenIndex)
+                applyScreenSize()
+                refreshRow(ROW_POSITION)
+            }
+            ROW_POSITION -> {
+                posIndex = (posIndex + dir + POSITIONS.size) % POSITIONS.size
+                saveInt("screen_pos", posIndex)
                 applyScreenSize()
             }
             ROW_SHIFT_MANUAL -> nudgeManual(dir, fast)
