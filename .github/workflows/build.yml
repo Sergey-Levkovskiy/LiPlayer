@@ -1,10 +1,11 @@
 name: Build APK
 
 on:
+  # Только фактическое попадание кода в main. PR больше не собирается:
+  # мерж PR — это push в main, так что сборка после мержа всё равно будет.
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  # Ручной запуск с любой ветки: Actions -> Build APK -> Run workflow.
   workflow_dispatch:
 
 jobs:
@@ -22,8 +23,29 @@ jobs:
       - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.7'
+
+      - name: Собрать имя сборки
+        id: name
+        run: |
+          VERSION="1.0.${{ github.run_number }}"
+          DATE=$(date -u +%d%m%Y)
+          # Сборки с dev помечаем, чтобы не путать с тем, что влито в main.
+          if [ "${{ github.ref_name }}" = "main" ]; then SUFFIX=""; else SUFFIX="-${{ github.ref_name }}"; fi
+          APK="LiPlayer-v${VERSION}-${DATE}${SUFFIX}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "apk=${APK}" >> "$GITHUB_OUTPUT"
+          echo "Версия ${VERSION}, файл ${APK}.apk, ветка ${{ github.ref_name }}"
+
       - run: gradle assembleDebug --no-daemon
+
+      - name: Переименовать APK
+        run: |
+          mv app/build/outputs/apk/debug/app-debug.apk \
+             "app/build/outputs/apk/debug/${{ steps.name.outputs.apk }}.apk"
+          ls -lh app/build/outputs/apk/debug/
+
       - uses: actions/upload-artifact@v4
         with:
-          name: liplayer-apk-${{ github.run_number }}
-          path: LiPlayer-update/app/build/outputs/apk/debug/app-debug.apk
+          name: ${{ steps.name.outputs.apk }}
+          path: LiPlayer-update/app/build/outputs/apk/debug/${{ steps.name.outputs.apk }}.apk
+          if-no-files-found: error

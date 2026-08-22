@@ -1,18 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  root        : чёрный контейнер, обрезает всё, что вышло за экран
-  player_view : видео и субтитры; сюда же встроен контроллер Media3.
-                Сдвиг и размер задаются его layoutParams, не трансформацией:
-                SurfaceView внутри не слушается translationY/scale.
-  left_top    : индикатор записи (сверху) и кнопка списка записей
-  drawer      : список записей, выезжает слева
-  popup       : всплывающее меню НАД панелью действий
-  action_bar  : четыре действия внизу справа
-  side_scroll : остальные настройки, справа по центру
-  aux_panel   : список доступных значений для выбранного ряда
+  Всё управление собрано в одном левом столбце, сверху вниз:
+  настройки, запись (+ список записей и индикатор), сдвиг, часы, транспорт.
 
-  Навигация — штатным фокусом Android, без ручной маршрутизации кнопок:
-  focusable + nextFocus, а не dispatchKeyEvent.
+  menu_cats   : первый уровень меню — Видео / Экран / Запись / Часы
+  menu_detail : второй уровень — настройки выбранной категории, правее.
+                Оба выравниваются по вертикали КОДОМ: панель встаёт на уровень
+                своего пункта, а не по центру экрана.
+
+  От панели Media3 остаётся только полоса времени внизу: центральный блок
+  кнопок скрывается, транспорт живёт в правом столбце.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -34,72 +31,6 @@
         app:use_controller="true"
         app:show_buffering="when_playing" />
 
-    <!-- ============================================= верхний левый угол -->
-    <LinearLayout
-        android:id="@+id/left_top"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|left"
-        android:layout_marginLeft="22dp"
-        android:layout_marginTop="18dp"
-        android:gravity="left"
-        android:orientation="vertical">
-
-        <LinearLayout
-            android:id="@+id/rec_badge"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/badge_bg"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingLeft="8dp"
-            android:paddingRight="10dp"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp"
-            android:visibility="gone">
-
-            <ImageView
-                android:id="@+id/rec_dot"
-                android:layout_width="11dp"
-                android:layout_height="11dp"
-                android:contentDescription="@string/ctl_record"
-                android:src="@drawable/ic_record" />
-
-            <TextView
-                android:id="@+id/rec_size"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginLeft="7dp"
-                android:textColor="#FFFFFF"
-                android:textSize="13sp" />
-        </LinearLayout>
-
-        <ImageButton
-            android:id="@+id/btn_library"
-            android:layout_marginTop="8dp"
-            android:layout_width="46dp"
-            android:layout_height="46dp"
-            android:background="@drawable/btn_focus"
-            android:contentDescription="@string/lib_recordings"
-            android:focusable="true"
-            android:padding="9dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_list" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/clock"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|right"
-        android:layout_marginTop="20dp"
-        android:layout_marginRight="26dp"
-        android:shadowColor="#FF000000"
-        android:shadowRadius="6"
-        android:textColor="#FFFFFF"
-        android:textSize="18sp"
-        android:visibility="gone" />
-
     <TextView
         android:id="@+id/hud"
         android:layout_width="wrap_content"
@@ -115,16 +46,86 @@
         android:textSize="20sp"
         android:visibility="gone" />
 
-    <!-- ================================================= ящик записей -->
+    <!-- Индикатор записи -->
+    <LinearLayout
+        android:id="@+id/rec_badge"
+        android:layout_gravity="top|left"
+        android:layout_marginTop="18dp"
+        android:layout_marginLeft="20dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/badge_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingLeft="7dp"
+        android:paddingRight="9dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp"
+        android:visibility="gone">
+
+        <ImageView
+        android:id="@+id/rec_dot"
+        android:layout_width="10dp"
+        android:layout_height="10dp"
+        android:contentDescription="@string/ctl_record"
+        android:src="@drawable/ic_record" />
+
+        <TextView
+        android:id="@+id/rec_size"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginLeft="6dp"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- ================================== второй уровень меню (левее всех) -->
+    <LinearLayout
+        android:id="@+id/menu_detail"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|left"
+        android:layout_marginLeft="20dp"
+        android:background="@drawable/popup_bg"
+        android:orientation="vertical"
+        android:padding="8dp"
+        android:visibility="gone" />
+
+    <!-- ============================================ первый уровень меню -->
+    <LinearLayout
+        android:id="@+id/menu_cats"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|left"
+        android:layout_marginLeft="20dp"
+        android:background="@drawable/bar_bg"
+        android:orientation="vertical"
+        android:padding="8dp"
+        android:visibility="gone" />
+
+    <!-- ================================= всплывашка сдвига, у своей кнопки -->
+    <LinearLayout
+        android:id="@+id/popup"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|left"
+        android:layout_marginLeft="20dp"
+        android:background="@drawable/popup_bg"
+        android:orientation="vertical"
+        android:padding="6dp"
+        android:visibility="gone" />
+
+    <!-- ========================================== список записей, справа -->
     <LinearLayout
         android:id="@+id/drawer"
-        android:layout_width="460dp"
+        android:layout_width="470dp"
         android:layout_height="match_parent"
         android:layout_gravity="left"
+        android:layout_marginLeft="86dp"
         android:background="@drawable/drawer_bg"
         android:orientation="vertical"
-        android:paddingLeft="22dp"
-        android:paddingRight="18dp"
+        android:paddingLeft="20dp"
+        android:paddingRight="20dp"
         android:paddingTop="24dp"
         android:paddingBottom="18dp"
         android:visibility="gone">
@@ -159,143 +160,167 @@
             android:scrollbars="none" />
     </LinearLayout>
 
-    <!-- ============================== всплывашка над панелью действий -->
+    <!-- ============================================ правый столбец управления -->
     <LinearLayout
-        android:id="@+id/popup"
+        android:id="@+id/side_col"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|right"
-        android:layout_marginRight="26dp"
-        android:layout_marginBottom="76dp"
-        android:background="@drawable/popup_bg"
+        android:layout_gravity="left|center_vertical"
+        android:layout_marginLeft="20dp"
+        android:background="@drawable/bar_bg"
+        android:gravity="left"
         android:orientation="vertical"
-        android:padding="6dp"
-        android:visibility="gone" />
+        android:paddingLeft="6dp"
+        android:paddingRight="6dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp">
 
-    <!-- ==================================== четыре действия внизу справа -->
-    <LinearLayout
-        android:id="@+id/action_bar"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|right"
-        android:layout_marginRight="10dp"
-        android:layout_marginBottom="6dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:padding="2dp">
-
-        <ImageButton
-            android:id="@+id/btn_record"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="@drawable/btn_focus"
-            android:contentDescription="@string/ctl_record"
-            android:focusable="true"
-            android:padding="11dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_record" />
-
-        <ImageButton
-            android:id="@+id/btn_rec_pause"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="@drawable/btn_focus"
-            android:contentDescription="@string/rec_pause"
-            android:focusable="true"
-            android:padding="11dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_pause"
-            android:visibility="gone" />
-
-        <ImageButton
-            android:id="@+id/btn_rec_snooze"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="@drawable/btn_focus"
-            android:contentDescription="@string/rec_snooze"
-            android:focusable="true"
-            android:padding="11dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_pause_timed"
-            android:visibility="gone" />
-
-        <ImageButton
-            android:id="@+id/btn_rec_stop"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="@drawable/btn_focus"
-            android:contentDescription="@string/rec_stop"
-            android:focusable="true"
-            android:padding="12dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_stop"
-            android:visibility="gone" />
-
-
-        <ImageButton
-            android:id="@+id/btn_shift"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="@drawable/btn_focus"
-            android:contentDescription="@string/ctl_shift"
-            android:focusable="true"
-            android:padding="11dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_shift" />
-
+        <!-- 1. Настройки -->
         <ImageButton
             android:id="@+id/btn_settings"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
             android:background="@drawable/btn_focus"
             android:contentDescription="@string/menu_more"
             android:focusable="true"
-            android:padding="10dp"
+            android:padding="9dp"
             android:scaleType="fitCenter"
             android:src="@drawable/ic_gear" />
-    </LinearLayout>
 
-    <!-- ================================== остальные настройки, справа -->
-    <!-- Настройки и подсказка к выбранному ряду стоят рядом: подсказка
-         слева от панели, поэтому оба лежат в одной горизонтальной ленте. -->
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="match_parent"
-        android:layout_gravity="right"
-        android:layout_marginRight="24dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingTop="16dp"
-        android:paddingBottom="16dp">
-
+        <!-- 2. Запись: одна кнопка превращается в три -->
         <LinearLayout
-            android:id="@+id/aux_panel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginRight="10dp"
-            android:background="@drawable/popup_bg"
-            android:orientation="vertical"
-            android:padding="8dp"
+            android:gravity="left|center_vertical"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/btn_record"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:background="@drawable/btn_focus"
+                android:contentDescription="@string/ctl_record"
+                android:focusable="true"
+                android:padding="10dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_record" />
+
+            <ImageButton
+                android:id="@+id/btn_rec_pause"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/btn_focus"
+                android:contentDescription="@string/rec_pause"
+                android:focusable="true"
+                android:padding="8dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_pause"
+                android:visibility="gone" />
+
+            <ImageButton
+                android:id="@+id/btn_rec_snooze"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/btn_focus"
+                android:contentDescription="@string/rec_snooze"
+                android:focusable="true"
+                android:padding="8dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_pause_timed"
+                android:visibility="gone" />
+
+            <ImageButton
+                android:id="@+id/btn_rec_stop"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/btn_focus"
+                android:contentDescription="@string/rec_stop"
+                android:focusable="true"
+                android:padding="9dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_stop"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- Список записей -->
+        <ImageButton
+            android:id="@+id/btn_library"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
+            android:background="@drawable/btn_focus"
+            android:contentDescription="@string/lib_recordings"
+            android:focusable="true"
+            android:padding="9dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_list" />
+
+        <!-- 3. Сдвиг -->
+        <ImageButton
+            android:id="@+id/btn_shift"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
+            android:background="@drawable/btn_focus"
+            android:contentDescription="@string/ctl_shift"
+            android:focusable="true"
+            android:padding="9dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_shift" />
+
+        <!-- 4. Время -->
+        <TextView
+            android:id="@+id/clock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="left"
+            android:layout_marginTop="4dp"
+            android:layout_marginLeft="6dp"
+            android:layout_marginBottom="4dp"
+            android:shadowColor="#FF000000"
+            android:shadowRadius="6"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
             android:visibility="gone" />
 
-        <ScrollView
-            android:id="@+id/side_scroll"
+        <!-- 5. Перемотка и старт/пауза -->
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:background="@drawable/bar_bg"
-            android:scrollbars="none"
-            android:visibility="gone">
+            android:gravity="left|center_vertical"
+            android:orientation="horizontal">
 
-            <LinearLayout
-                android:id="@+id/side_bar"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:paddingLeft="8dp"
-                android:paddingRight="8dp"
-                android:paddingTop="8dp"
-                android:paddingBottom="8dp" />
-        </ScrollView>
+            <ImageButton
+                android:id="@+id/btn_rew"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="@drawable/btn_focus"
+                android:contentDescription="@string/tr_rew"
+                android:focusable="true"
+                android:padding="8dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_rew" />
+
+            <ImageButton
+                android:id="@+id/btn_play"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/btn_focus"
+                android:contentDescription="@string/tr_play"
+                android:focusable="true"
+                android:padding="9dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_pause" />
+
+            <ImageButton
+                android:id="@+id/btn_ffwd"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="@drawable/btn_focus"
+                android:contentDescription="@string/tr_ffwd"
+                android:focusable="true"
+                android:padding="8dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_ffwd" />
+        </LinearLayout>
     </LinearLayout>
 
 </FrameLayout>
