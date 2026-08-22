@@ -112,6 +112,10 @@ class LibraryActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_library)
 
+        findViewById<TextView>(R.id.title).text = getString(
+            R.string.lib_title, BuildConfig.VERSION_NAME, BuildConfig.GIT_SHA
+        )
+
         list = findViewById(R.id.list)
         empty = findViewById(R.id.empty)
         list.adapter = adapter
