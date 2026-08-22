@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Всё управление собрано в одном правом столбце, сверху вниз:
+  Всё управление собрано в одном левом столбце, сверху вниз:
   настройки, запись (+ список записей и индикатор), сдвиг, часы, транспорт.
 
   menu_cats   : первый уровень меню — Видео / Экран / Запись / Часы
-  menu_detail : второй уровень — настройки выбранной категории.
+  menu_detail : второй уровень — настройки выбранной категории, правее.
                 Оба выравниваются по вертикали КОДОМ: панель встаёт на уровень
                 своего пункта, а не по центру экрана.
 
@@ -49,9 +49,9 @@
     <!-- Индикатор записи -->
     <LinearLayout
         android:id="@+id/rec_badge"
-        android:layout_gravity="top|right"
+        android:layout_gravity="top|left"
         android:layout_marginTop="18dp"
-        android:layout_marginRight="20dp"
+        android:layout_marginLeft="20dp"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:background="@drawable/badge_bg"
@@ -84,7 +84,8 @@
         android:id="@+id/menu_detail"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|right"
+        android:layout_gravity="top|left"
+        android:layout_marginLeft="20dp"
         android:background="@drawable/popup_bg"
         android:orientation="vertical"
         android:padding="8dp"
@@ -95,7 +96,8 @@
         android:id="@+id/menu_cats"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|right"
+        android:layout_gravity="top|left"
+        android:layout_marginLeft="20dp"
         android:background="@drawable/bar_bg"
         android:orientation="vertical"
         android:padding="8dp"
@@ -106,7 +108,8 @@
         android:id="@+id/popup"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|right"
+        android:layout_gravity="top|left"
+        android:layout_marginLeft="20dp"
         android:background="@drawable/popup_bg"
         android:orientation="vertical"
         android:padding="6dp"
@@ -117,8 +120,8 @@
         android:id="@+id/drawer"
         android:layout_width="470dp"
         android:layout_height="match_parent"
-        android:layout_gravity="right"
-        android:layout_marginRight="86dp"
+        android:layout_gravity="left"
+        android:layout_marginLeft="86dp"
         android:background="@drawable/drawer_bg"
         android:orientation="vertical"
         android:paddingLeft="20dp"
@@ -159,13 +162,13 @@
 
     <!-- ============================================ правый столбец управления -->
     <LinearLayout
-        android:id="@+id/right_col"
+        android:id="@+id/side_col"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="right|center_vertical"
-        android:layout_marginRight="20dp"
+        android:layout_gravity="left|center_vertical"
+        android:layout_marginLeft="20dp"
         android:background="@drawable/bar_bg"
-        android:gravity="right"
+        android:gravity="left"
         android:orientation="vertical"
         android:paddingLeft="6dp"
         android:paddingRight="6dp"
@@ -188,8 +191,31 @@
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:gravity="right|center_vertical"
+            android:gravity="left|center_vertical"
             android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/btn_record"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:background="@drawable/btn_focus"
+                android:contentDescription="@string/ctl_record"
+                android:focusable="true"
+                android:padding="10dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_record" />
+
+            <ImageButton
+                android:id="@+id/btn_rec_pause"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/btn_focus"
+                android:contentDescription="@string/rec_pause"
+                android:focusable="true"
+                android:padding="8dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_pause"
+                android:visibility="gone" />
 
             <ImageButton
                 android:id="@+id/btn_rec_snooze"
@@ -214,29 +240,6 @@
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_stop"
                 android:visibility="gone" />
-
-            <ImageButton
-                android:id="@+id/btn_rec_pause"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/btn_focus"
-                android:contentDescription="@string/rec_pause"
-                android:focusable="true"
-                android:padding="8dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_pause"
-                android:visibility="gone" />
-
-            <ImageButton
-                android:id="@+id/btn_record"
-                android:layout_width="46dp"
-                android:layout_height="46dp"
-                android:background="@drawable/btn_focus"
-                android:contentDescription="@string/ctl_record"
-                android:focusable="true"
-                android:padding="10dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_record" />
         </LinearLayout>
 
         <!-- Список записей -->
@@ -268,9 +271,9 @@
             android:id="@+id/clock"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="right"
+            android:layout_gravity="left"
             android:layout_marginTop="4dp"
-            android:layout_marginRight="6dp"
+            android:layout_marginLeft="6dp"
             android:layout_marginBottom="4dp"
             android:shadowColor="#FF000000"
             android:shadowRadius="6"
@@ -282,7 +285,7 @@
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:gravity="right|center_vertical"
+            android:gravity="left|center_vertical"
             android:orientation="horizontal">
 
             <ImageButton

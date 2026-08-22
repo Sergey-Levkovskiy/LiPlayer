@@ -65,9 +65,10 @@ import kotlin.math.roundToInt
  * меняется его положение в разметке, а не трансформация. Пиксели не
  * пересчитываются — кадр просто рисуется в другом месте экрана.
  *
- * Управление: четыре действия внизу справа (запись, качество, сдвиг,
- * настройки), список записей слева сверху. Навигация — штатным фокусом
- * Android, а не ручным разбором кнопок: так пульт ведёт себя предсказуемо.
+ * Управление собрано в левом столбце: настройки, запись, список записей,
+ * сдвиг, часы, транспорт. Меню раскрываются вправо от столбца и встают на
+ * уровень своего пункта. Навигация — штатным фокусом Android, а не ручным
+ * разбором кнопок: так пульт ведёт себя предсказуемо.
  */
 @OptIn(UnstableApi::class)
 class PlayerActivity : ComponentActivity() {
@@ -160,7 +161,7 @@ class PlayerActivity : ComponentActivity() {
 
     private lateinit var root: FrameLayout
     private lateinit var playerView: PlayerView
-    private lateinit var rightCol: LinearLayout
+    private lateinit var sideCol: LinearLayout
     private lateinit var clock: TextView
     private lateinit var hud: TextView
     private lateinit var drawer: LinearLayout
@@ -344,7 +345,7 @@ class PlayerActivity : ComponentActivity() {
     private fun bindViews() {
         root = findViewById(R.id.root)
         playerView = findViewById(R.id.player_view)
-        rightCol = findViewById(R.id.right_col)
+        sideCol = findViewById(R.id.side_col)
         clock = findViewById(R.id.clock)
         hud = findViewById(R.id.hud)
         drawer = findViewById(R.id.drawer)
@@ -764,7 +765,7 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
-    // --------------------------------------------------------- правый столбец
+    // ----------------------------------------------------------- левый столбец
 
     private fun wireActions() {
         btnSettings.setOnClickListener { toggleMenu() }
@@ -796,7 +797,7 @@ class PlayerActivity : ComponentActivity() {
 
     /** Столбец живёт и умирает вместе с панелью Media3. */
     private fun onControllerVisibility(shown: Boolean) {
-        rightCol.visibility = if (shown) View.VISIBLE else View.GONE
+        sideCol.visibility = if (shown) View.VISIBLE else View.GONE
         hideStockButtons()
         if (!shown) closePanels()
     }
@@ -864,7 +865,7 @@ class PlayerActivity : ComponentActivity() {
 
     private fun hasPanelFocus(): Boolean {
         val f = currentFocus ?: return false
-        return f.isDescendantOf(rightCol) || f.isDescendantOf(popup) ||
+        return f.isDescendantOf(sideCol) || f.isDescendantOf(popup) ||
             f.isDescendantOf(menuCats) || f.isDescendantOf(menuDetail) ||
             f.isDescendantOf(drawer)
     }
@@ -895,24 +896,26 @@ class PlayerActivity : ComponentActivity() {
     }
 
     /**
-     * Панели выстраиваются справа налево: столбец, первый уровень, второй.
+     * Панели выстраиваются слева направо: столбец, первый уровень, второй.
      * По вертикали каждая привязана к своему пункту, а не к центру экрана.
+     * Левый край панелей совпадает с краем столбца, поэтому смещение
+     * считается от его ширины.
      */
     private fun placePanels() {
         root.post {
-            val colW = rightCol.width
+            val colW = sideCol.width
             if (menuCats.visibility == View.VISIBLE) {
-                menuCats.translationX = -(colW + gapPx).toFloat()
+                menuCats.translationX = (colW + gapPx).toFloat()
                 menuCats.translationY = topInRoot(btnSettings).toFloat()
             }
             if (menuDetail.visibility == View.VISIBLE) {
-                menuDetail.translationX = -(colW + gapPx + menuCats.width + gapPx).toFloat()
+                menuDetail.translationX = (colW + gapPx + menuCats.width + gapPx).toFloat()
                 val anchor = menuCats.getChildAt(catIndex)
                 menuDetail.translationY =
                     topInRoot(anchor ?: btnSettings).toFloat()
             }
             if (popup.visibility == View.VISIBLE) {
-                popup.translationX = -(colW + gapPx).toFloat()
+                popup.translationX = (colW + gapPx).toFloat()
                 popup.translationY = topInRoot(btnShift).toFloat()
             }
         }
@@ -1012,8 +1015,8 @@ class PlayerActivity : ComponentActivity() {
             row.setOnClickListener { openCategory(index) }
             row.setOnKeyListener { _, code, event ->
                 if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-                // Второй уровень открывается влево — там он и находится.
-                if (code == KeyEvent.KEYCODE_DPAD_LEFT) { openCategory(index); true } else false
+                // Второй уровень открывается вправо — там он и находится.
+                if (code == KeyEvent.KEYCODE_DPAD_RIGHT) { openCategory(index); true } else false
             }
             menuCats.addView(row)
         }
