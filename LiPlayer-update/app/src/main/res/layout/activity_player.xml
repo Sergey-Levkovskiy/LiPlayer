@@ -2,7 +2,7 @@
 <!--
   root        : чёрный контейнер, обрезает всё, что вышло за экран
   player_view : видео и субтитры; сюда же встроен контроллер Media3
-  left_top    : кнопка «записи» и компактный индикатор записи
+  left_top    : индикатор записи (сверху) и кнопка списка записей
   drawer      : список записей, выезжает слева
   popup       : всплывающее меню НАД панелью действий
   action_bar  : четыре действия внизу справа
@@ -42,22 +42,10 @@
         android:gravity="left"
         android:orientation="vertical">
 
-        <ImageButton
-            android:id="@+id/btn_library"
-            android:layout_width="46dp"
-            android:layout_height="46dp"
-            android:background="@drawable/btn_focus"
-            android:contentDescription="@string/lib_recordings"
-            android:focusable="true"
-            android:padding="9dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_list" />
-
         <LinearLayout
             android:id="@+id/rec_badge"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
             android:background="@drawable/badge_bg"
             android:gravity="center_vertical"
             android:orientation="horizontal"
@@ -82,6 +70,18 @@
                 android:textColor="#FFFFFF"
                 android:textSize="13sp" />
         </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/btn_library"
+            android:layout_marginTop="8dp"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
+            android:background="@drawable/btn_focus"
+            android:contentDescription="@string/lib_recordings"
+            android:focusable="true"
+            android:padding="9dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_list" />
     </LinearLayout>
 
     <TextView

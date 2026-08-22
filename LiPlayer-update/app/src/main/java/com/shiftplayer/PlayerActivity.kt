@@ -87,6 +87,12 @@ class PlayerActivity : ComponentActivity() {
         const val UI_TIMEOUT_MS = 6_000L
 
         /**
+         * Пока открыт список или настройки, панель живёт дольше — но всё
+         * равно уезжает сама, как в любом проигрывателе.
+         */
+        const val PANEL_TIMEOUT_MS = 14_000L
+
+        /**
          * Диагональ панели, для которой «Полный» размер = 100 %.
          *
          * Меняется одной цифрой, если приложение поедет на другой телевизор.
@@ -564,8 +570,7 @@ class PlayerActivity : ComponentActivity() {
      */
     private fun onControllerVisibility(shown: Boolean) {
         actionBar.visibility = if (shown) View.VISIBLE else View.GONE
-        // INVISIBLE, а не GONE: иначе плашка записи под кнопкой прыгает.
-        btnLibrary.visibility = if (shown) View.VISIBLE else View.INVISIBLE
+        btnLibrary.visibility = if (shown) View.VISIBLE else View.GONE
         hideStockButtons()
         if (!shown) closePanels()
     }
@@ -595,15 +600,19 @@ class PlayerActivity : ComponentActivity() {
         else -> btnShift
     }
 
-    /** Пока открыт список или всплывашка, панель не должна уезжать. */
+    /**
+     * Открытая панель просто получает больший таймаут, а не вечную жизнь:
+     * меню должно закрываться само, если его бросили.
+     */
     private fun pinController(pinned: Boolean) {
         playerView.controllerShowTimeoutMs =
-            if (pinned) 0 else UI_TIMEOUT_MS.toInt()
+            (if (pinned) PANEL_TIMEOUT_MS else UI_TIMEOUT_MS).toInt()
         playerView.showController()
     }
 
+    /** Любое нажатие сбрасывает таймер закрытия. */
     private fun keepUiAlive() {
-        if (playerView.controllerShowTimeoutMs != 0) playerView.showController()
+        playerView.showController()
     }
 
     private fun closePanels() {
