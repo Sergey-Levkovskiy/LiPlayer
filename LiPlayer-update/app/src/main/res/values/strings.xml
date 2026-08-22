@@ -7,7 +7,7 @@
     <string name="resumed_at">Продолжаем с %1$s</string>
 
     <string name="hud_shift">Сдвиг: %1$d px</string>
-    <string name="hud_safe">предел: ±%1$d px</string>
+    <string name="hud_safe">полосы: ±%1$d px</string>
     <string name="hud_crop">ОБРЕЗКА</string>
 
     <string name="ctl_shift">Сдвиг</string>
@@ -69,7 +69,8 @@
     <string name="shift_capture_off">OK — включить стрелки ↑ ↓</string>
     <string name="shift_capture_on">↑ ↓ двигать кадр · OK — готово</string>
     <string name="shift_now">Сейчас: %1$d px</string>
-    <string name="shift_limit">Предел: ±%1$d px</string>
+    <string name="shift_no_bars">Полос нет: авто не сдвинет, двигайте вручную</string>
+    <string name="shift_limit">Аппаратные полосы: ±%1$d px</string>
     <string name="shift_manual_on">Вручную ↑↓ %1$d px</string>
 
     <string name="aspect_fit">По размеру</string>

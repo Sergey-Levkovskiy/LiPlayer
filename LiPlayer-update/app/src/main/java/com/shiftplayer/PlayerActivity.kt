@@ -86,13 +86,6 @@ class PlayerActivity : ComponentActivity() {
          */
         const val EDGE_GUARD_PX = 4f
 
-        /**
-         * Насколько двигать кадр, когда чёрных полос нет вовсе (16:9 на
-         * 16:9). Полосы прятать нечего, поэтому «до края» иначе давало бы
-         * ноль и выглядело как неработающая кнопка. Доля высоты вьюхи.
-         */
-        const val NO_BARS_SHARE = 0.06f
-
         const val UI_TIMEOUT_MS = 6_000L
 
         /**
@@ -658,7 +651,10 @@ class PlayerActivity : ComponentActivity() {
     // ------------------------------------------------------------------- shift
 
     private fun applyShift(showHud: Boolean) {
-        val limit = (if (playerView.height > 0) playerView.height else root.height) / 2f
+        val viewH = (if (playerView.height > 0) playerView.height else root.height).toFloat()
+        // Ручному режиму даём весь ход: именно так выносят за экран полосы,
+        // впечатанные в кадр. Авто-значения и так малы — они от полос.
+        val limit = if (shiftMode == 3) viewH else viewH / 2f
         shiftPx = shiftPx.coerceIn(-limit, limit)
         applyGeometry()
         if (shiftMode == 3) prefs?.edit()?.putFloat(aspectKey, shiftPx)?.apply()
@@ -703,19 +699,23 @@ class PlayerActivity : ComponentActivity() {
     }
 
     /**
-     * Предел сдвига без обрезки кадра.
+     * Предел авто-сдвига: только по аппаратным полосам.
      *
-     * Когда полос нет, возвращаем заметную долю высоты: иначе «до края»
-     * не делал бы ничего. Обрезку в этом случае покажет HUD.
+     * Если полосы впечатаны в кадр, для плеера это обычное 16:9 видео и
+     * считать нечего — авто честно вернёт ноль. Такие полосы убираются
+     * ручным сдвигом, который двигает кадр целиком.
      */
-    private fun edgeShift(): Float {
-        val byBars = safeMarginPx - EDGE_GUARD_PX
-        if (byBars >= 1f) return byBars
-        val viewH = if (playerView.height > 0) playerView.height else root.height
-        return viewH * NO_BARS_SHARE
-    }
+    private fun edgeShift() = (safeMarginPx - EDGE_GUARD_PX).coerceAtLeast(0f)
+
+    /** Есть ли что прятать авто-сдвигом. */
+    private fun hasHardwareBars() = safeMarginPx > EDGE_GUARD_PX + 1f
 
     private fun setShiftMode(mode: Int) {
+        if (mode == 1 || mode == 2) {
+            if (!hasHardwareBars()) {
+                Toast.makeText(this, R.string.shift_no_bars, Toast.LENGTH_LONG).show()
+            }
+        }
         shiftMode = mode
         shiftPx = when (mode) {
             1 -> -edgeShift()
@@ -1041,17 +1041,20 @@ class PlayerActivity : ComponentActivity() {
                 (POSITIONS.indices).map { positionLabel(it) },
                 if (SCREEN_IN[screenIndex] == 0) -1 else posIndex
             )
-            ROW_SHIFT_MANUAL -> showAux(
-                listOf(
+            ROW_SHIFT_MANUAL -> {
+                val lines = arrayListOf(
                     getString(R.string.shift_now, shiftPx.roundToInt()),
-                    getString(R.string.shift_limit, safeMarginPx.roundToInt()),
+                    getString(R.string.shift_limit, safeMarginPx.roundToInt())
+                )
+                if (!hasHardwareBars()) lines.add(getString(R.string.shift_no_bars))
+                lines.add(
                     getString(
                         if (shiftCapture) R.string.shift_capture_on
                         else R.string.shift_capture_off
                     )
-                ),
-                if (shiftCapture) 2 else -1
-            )
+                )
+                showAux(lines, if (shiftCapture) lines.size - 1 else -1)
+            }
             else -> auxPanel.visibility = View.GONE
         }
     }
