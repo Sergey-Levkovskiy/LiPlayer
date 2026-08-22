@@ -62,8 +62,9 @@ import kotlin.math.roundToInt
 /**
  * Плеер с вертикальным сдвигом изображения БЕЗ масштабирования.
  *
- * Двигается PlayerView внутри чёрного контейнера с clipChildren=true —
- * пиксели не пересчитываются, кадр рисуется в другом месте экрана.
+ * PlayerView переставляется внутри чёрного контейнера с clipChildren=true:
+ * меняется его положение в разметке, а не трансформация. Пиксели не
+ * пересчитываются — кадр просто рисуется в другом месте экрана.
  *
  * Управление: четыре действия внизу справа (запись, качество, сдвиг,
  * настройки), список записей слева сверху. Навигация — штатным фокусом
@@ -84,6 +85,13 @@ class PlayerActivity : ComponentActivity() {
          * панель телевизора начинает «плыть» масштабом.
          */
         const val EDGE_GUARD_PX = 4f
+
+        /**
+         * Насколько двигать кадр, когда чёрных полос нет вовсе (16:9 на
+         * 16:9). Полосы прятать нечего, поэтому «до края» иначе давало бы
+         * ноль и выглядело как неработающая кнопка. Доля высоты вьюхи.
+         */
+        const val NO_BARS_SHARE = 0.06f
 
         const val UI_TIMEOUT_MS = 6_000L
 
@@ -639,7 +647,9 @@ class PlayerActivity : ComponentActivity() {
         shiftPx = when (shiftMode) {
             1 -> -edgeShift()
             2 -> edgeShift()
-            3 -> prefs?.getFloat(aspectKey, 0f) ?: 0f
+            // Если под новым ключом соотношения записи ещё нет, держим
+            // текущее значение: иначе ручной сдвиг обнулялся сам.
+            3 -> prefs?.getFloat(aspectKey, shiftPx) ?: shiftPx
             else -> 0f
         }
         applyShift(showHud = false)
@@ -650,13 +660,60 @@ class PlayerActivity : ComponentActivity() {
     private fun applyShift(showHud: Boolean) {
         val limit = (if (playerView.height > 0) playerView.height else root.height) / 2f
         shiftPx = shiftPx.coerceIn(-limit, limit)
-        playerView.translationY = shiftPx
+        applyGeometry()
         if (shiftMode == 3) prefs?.edit()?.putFloat(aspectKey, shiftPx)?.apply()
         saveInt("shift_mode", shiftMode)
         if (showHud) showHud()
     }
 
-    private fun edgeShift() = (safeMarginPx - EDGE_GUARD_PX).coerceAtLeast(0f)
+    /**
+     * Размер, положение и сдвиг одной операцией над layoutParams.
+     *
+     * Сдвиг делается ОТСТУПОМ, а не translationY: внутри PlayerView лежит
+     * SurfaceView, а он живёт на аппаратной поверхности и трансформации
+     * вида не слушается — двигалось всё, кроме самого видео. Изменение
+     * положения в разметке поверхность переносит по-настоящему.
+     */
+    private fun applyGeometry() {
+        val w = root.width
+        val h = root.height
+        if (w <= 0 || h <= 0) return
+
+        val inches = SCREEN_IN[screenIndex]
+        val scale = if (inches == 0) 1f else inches.toFloat() / BASE_DIAGONAL_IN
+
+        val lp = playerView.layoutParams as FrameLayout.LayoutParams
+        lp.width = (w * scale).roundToInt()
+        lp.height = (h * scale).roundToInt()
+        lp.gravity = if (inches == 0) Gravity.CENTER else POSITIONS[posIndex]
+
+        // У нижней гравитации отступ сверху не действует — считаем от низа.
+        val shift = shiftPx.roundToInt()
+        if (lp.gravity and Gravity.BOTTOM == Gravity.BOTTOM) {
+            lp.topMargin = 0
+            lp.bottomMargin = -shift
+        } else {
+            lp.topMargin = shift
+            lp.bottomMargin = 0
+        }
+        playerView.layoutParams = lp
+
+        // Остатки прежнего способа сдвига, иначе сложились бы дважды.
+        playerView.translationY = 0f
+    }
+
+    /**
+     * Предел сдвига без обрезки кадра.
+     *
+     * Когда полос нет, возвращаем заметную долю высоты: иначе «до края»
+     * не делал бы ничего. Обрезку в этом случае покажет HUD.
+     */
+    private fun edgeShift(): Float {
+        val byBars = safeMarginPx - EDGE_GUARD_PX
+        if (byBars >= 1f) return byBars
+        val viewH = if (playerView.height > 0) playerView.height else root.height
+        return viewH * NO_BARS_SHARE
+    }
 
     private fun setShiftMode(mode: Int) {
         shiftMode = mode
@@ -694,21 +751,9 @@ class PlayerActivity : ComponentActivity() {
      */
     private fun applyScreenSize() {
         root.post {
-            val w = root.width
-            val h = root.height
-            if (w <= 0 || h <= 0) return@post
-
-            val inches = SCREEN_IN[screenIndex]
-            val scale = if (inches == 0) 1f else inches.toFloat() / BASE_DIAGONAL_IN
-
-            val lp = playerView.layoutParams as FrameLayout.LayoutParams
-            lp.width = (w * scale).roundToInt()
-            lp.height = (h * scale).roundToInt()
-            // При полном размере прижимать некуда — вьюха и так во весь экран.
-            lp.gravity = if (inches == 0) Gravity.CENTER else POSITIONS[posIndex]
-            playerView.layoutParams = lp
-
-            // Полоса и предел сдвига считаются от вьюхи, а не от экрана.
+            applyGeometry()
+            // Полоса и предел сдвига считаются от вьюхи, а не от экрана,
+            // поэтому пересчёт — только после того, как вьюху разложили.
             playerView.post { recomputeGeometry() }
         }
     }
