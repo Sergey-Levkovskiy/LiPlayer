@@ -93,6 +93,12 @@ class PlayerActivity : ComponentActivity() {
          */
         const val PANEL_TIMEOUT_MS = 14_000L
 
+        /** Сколько раз пробуем поднять оборвавшийся поток. */
+        const val MAX_RETRIES = 5
+
+        /** Позиция пишется на диск каждые N тиков по секунде. */
+        const val SAVE_EVERY_TICKS = 5
+
         /**
          * Диагональ панели, для которой «Полный» размер = 100 %.
          *
@@ -219,6 +225,9 @@ class PlayerActivity : ComponentActivity() {
      */
     private var shiftCapture = false
 
+    private var retries = 0
+    private var tickCount = 0
+
     private var recStartAt = 0L
     private var recStopAt = 0L
     private var recResumeAt = 0L
@@ -239,6 +248,12 @@ class PlayerActivity : ComponentActivity() {
         override fun run() {
             val now = System.currentTimeMillis()
             if (clockSize > 0) clock.text = clockFmt.format(Date(now))
+
+            // Пишем позицию на ходу: onStop не вызывается ни при обрыве
+            // потока, ни когда систему убивает приложение.
+            if (++tickCount % SAVE_EVERY_TICKS == 0 && player?.isPlaying == true) {
+                savePosition()
+            }
 
             if (recStartAt in 1..now) {
                 recStartAt = 0L
@@ -423,20 +438,32 @@ class PlayerActivity : ComponentActivity() {
                 if (sideScroll.visibility == View.VISIBLE) refreshAllRows()
             }
 
+            override fun onPlaybackStateChanged(state: Int) {
+                // Поток поднялся — счётчик попыток обнуляем.
+                if (state == Player.STATE_READY) retries = 0
+            }
+
             override fun onPlayerError(error: PlaybackException) {
-                Toast.makeText(
-                    this@PlayerActivity,
-                    getString(R.string.err_playback, error.errorCodeName),
-                    Toast.LENGTH_LONG
-                ).show()
+                // Сначала фиксируем позицию, потом пробуем поднять поток.
+                savePosition()
+                scheduleRetry(error)
             }
         })
 
         exo.setMediaItem(buildMediaItem(uri))
         exo.prepare()
 
+        // Позиция от вызывающего важнее нашей: Лампа знает, где человек
+        // остановился, даже если наш процесс успели убить.
+        val fromCaller = intentStartPosition()
         val saved = prefs?.getLong(posKey(uri), 0L) ?: 0L
-        if (saved > 10_000L) exo.seekTo(saved)
+        val startAt = if (fromCaller > 0L) fromCaller else saved
+        if (startAt > 10_000L) {
+            exo.seekTo(startAt)
+            Toast.makeText(
+                this, getString(R.string.resumed_at, fmtPosition(startAt)), Toast.LENGTH_SHORT
+            ).show()
+        }
 
         exo.setPlaybackSpeed(SPEEDS[speedIndex])
         exo.playWhenReady = true
@@ -474,11 +501,70 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
-    private fun posKey(uri: Uri) = "pos_" + uri.toString().hashCode()
+    /**
+     * Устойчивый ключ позиции.
+     *
+     * Полный URL как ключ не годится: TorrServe и подобные меняют порт,
+     * номер сессии и порядок параметров между запусками, поэтому позиция
+     * терялась, хотя была сохранена. Берём то, что не меняется — хеш
+     * раздачи с номером файла, иначе имя файла.
+     */
+    /**
+     * Позиция, которую передал вызывающий — Лампа, TorrServe, файловый
+     * менеджер. Контракт тот же, что у MX Player: extras «position» в
+     * миллисекундах. Тип у разных клиентов плавает, поэтому берём как есть.
+     */
+    private fun intentStartPosition(): Long {
+        val extras = intent?.extras ?: return -1L
+        for (key in arrayOf("position", "start_position", "extra_position")) {
+            val ms = when (val v = extras.get(key)) {
+                is Int -> v.toLong()
+                is Long -> v
+                is Float -> v.toLong()
+                is Double -> v.toLong()
+                else -> null
+            }
+            if (ms != null && ms > 0L) return ms
+        }
+        return -1L
+    }
+
+    /**
+     * Отдаём позицию обратно вызывающему, чтобы Лампа обновила свой
+     * таймлайн. Без этого она помнит только то, что видела до запуска плеера.
+     */
+    private fun publishResult() {
+        val p = player ?: return
+        setResult(
+            RESULT_OK,
+            Intent()
+                .putExtra("position", p.currentPosition.toInt())
+                .putExtra("duration", if (p.duration > 0) p.duration.toInt() else 0)
+                .putExtra("end_by", "user")
+        )
+    }
+
+    private fun posKey(uri: Uri): String {
+        val id = try {
+            val hash = uri.getQueryParameter("link") ?: uri.getQueryParameter("hash")
+            val index = uri.getQueryParameter("index") ?: ""
+            val name = uri.lastPathSegment ?: ""
+            when {
+                !hash.isNullOrEmpty() -> "$hash#$index"
+                name.isNotEmpty() -> name
+                else -> uri.toString()
+            }
+        } catch (e: UnsupportedOperationException) {
+            // Непрозрачный URI — параметров у него нет.
+            uri.toString()
+        }
+        return "pos_" + id.hashCode()
+    }
 
     private fun savePosition() {
         val p = player ?: return
         val uri = currentUri ?: return
+        publishResult()
         if (p.duration > 0 && p.currentPosition < p.duration - 15_000L) {
             prefs?.edit()?.putLong(posKey(uri), p.currentPosition)?.apply()
         } else {
@@ -486,8 +572,40 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Обрыв потока — не повод терять место. Переподключаемся с растущей
+     * задержкой и возвращаемся туда же, где остановились.
+     */
+    private fun scheduleRetry(error: PlaybackException) {
+        if (retries >= MAX_RETRIES) {
+            Toast.makeText(
+                this, getString(R.string.err_gave_up, error.errorCodeName),
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        if (retries == 0) {
+            Toast.makeText(this, R.string.err_retry, Toast.LENGTH_SHORT).show()
+        }
+        val delay = 2_000L shl retries
+        retries++
+        ui.removeCallbacks(retryPlayback)
+        ui.postDelayed(retryPlayback, delay)
+    }
+
+    private val retryPlayback = Runnable {
+        val p = player ?: return@Runnable
+        val uri = currentUri ?: return@Runnable
+        val saved = prefs?.getLong(posKey(uri), 0L) ?: 0L
+        p.prepare()
+        if (saved > 10_000L) p.seekTo(saved)
+        p.playWhenReady = true
+    }
+
     private fun releasePlayer() {
         if (recorder.isRecording) stopRecording()
+        ui.removeCallbacks(retryPlayback)
+        retries = 0
         recStartAt = 0L
         playerView.player = null
         player?.release()
@@ -635,6 +753,28 @@ class PlayerActivity : ComponentActivity() {
         playerView.showController()
         hideStockButtons()
         if (focus && !hasPanelFocus()) firstActionButton().requestFocus()
+    }
+
+    /**
+     * Куда встать фокусом, когда панель поднимают с пульта.
+     *
+     * OK — на воспроизведение, «вниз» — на полосу перемотки, «вверх» — на
+     * наши иконки. Кнопки Media3 появляются не сразу, поэтому наводимся
+     * после кадра отрисовки.
+     */
+    private fun showUiFocused(keyCode: Int) {
+        playerView.showController()
+        hideStockButtons()
+        playerView.post {
+            val id = when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_DOWN -> androidx.media3.ui.R.id.exo_progress
+                KeyEvent.KEYCODE_DPAD_UP -> 0
+                else -> androidx.media3.ui.R.id.exo_play_pause
+            }
+            val target = if (id == 0) null
+            else playerView.findViewById<View>(id)?.takeIf { it.isFocusable }
+            (target ?: firstActionButton()).requestFocus()
+        }
     }
 
     /** Первая доступная кнопка панели действий — для наведения фокуса. */
@@ -1465,6 +1605,15 @@ class PlayerActivity : ComponentActivity() {
 
     // ----------------------------------------------------------------- формат
 
+    private fun fmtPosition(ms: Long): String {
+        val total = ms / 1000L
+        val h = total / 3600L
+        val m = (total % 3600L) / 60L
+        val s = total % 60L
+        return if (h > 0) String.format(Locale.US, "%d:%02d:%02d", h, m, s)
+        else String.format(Locale.US, "%d:%02d", m, s)
+    }
+
     private fun fmtClock(ms: Long): String {
         val total = (ms.coerceAtLeast(0L) / 1000L).toInt()
         return String.format(Locale.US, "%d:%02d", total / 60, total % 60)
@@ -1518,7 +1667,6 @@ class PlayerActivity : ComponentActivity() {
         // проваливается. Иначе тот же OK долетал до кнопки записи, на
         // которую фокус встал секунду назад, и запись стартовала сразу.
         if (!playerView.isControllerFullyVisible) {
-            showUi(focus = true)
             when (event.keyCode) {
                 KeyEvent.KEYCODE_DPAD_UP,
                 KeyEvent.KEYCODE_DPAD_DOWN,
@@ -1526,7 +1674,11 @@ class PlayerActivity : ComponentActivity() {
                 KeyEvent.KEYCODE_DPAD_RIGHT,
                 KeyEvent.KEYCODE_DPAD_CENTER,
                 KeyEvent.KEYCODE_ENTER,
-                KeyEvent.KEYCODE_NUMPAD_ENTER -> return true
+                KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                    showUiFocused(event.keyCode)
+                    return true
+                }
+                else -> showUi(focus = true)
             }
         } else {
             keepUiAlive()
