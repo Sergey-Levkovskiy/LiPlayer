@@ -453,11 +453,15 @@ class PlayerActivity : ComponentActivity() {
         exo.setMediaItem(buildMediaItem(uri))
         exo.prepare()
 
+        // Позиция от вызывающего важнее нашей: Лампа знает, где человек
+        // остановился, даже если наш процесс успели убить.
+        val fromCaller = intentStartPosition()
         val saved = prefs?.getLong(posKey(uri), 0L) ?: 0L
-        if (saved > 10_000L) {
-            exo.seekTo(saved)
+        val startAt = if (fromCaller > 0L) fromCaller else saved
+        if (startAt > 10_000L) {
+            exo.seekTo(startAt)
             Toast.makeText(
-                this, getString(R.string.resumed_at, fmtPosition(saved)), Toast.LENGTH_SHORT
+                this, getString(R.string.resumed_at, fmtPosition(startAt)), Toast.LENGTH_SHORT
             ).show()
         }
 
@@ -505,6 +509,41 @@ class PlayerActivity : ComponentActivity() {
      * терялась, хотя была сохранена. Берём то, что не меняется — хеш
      * раздачи с номером файла, иначе имя файла.
      */
+    /**
+     * Позиция, которую передал вызывающий — Лампа, TorrServe, файловый
+     * менеджер. Контракт тот же, что у MX Player: extras «position» в
+     * миллисекундах. Тип у разных клиентов плавает, поэтому берём как есть.
+     */
+    private fun intentStartPosition(): Long {
+        val extras = intent?.extras ?: return -1L
+        for (key in arrayOf("position", "start_position", "extra_position")) {
+            val ms = when (val v = extras.get(key)) {
+                is Int -> v.toLong()
+                is Long -> v
+                is Float -> v.toLong()
+                is Double -> v.toLong()
+                else -> null
+            }
+            if (ms != null && ms > 0L) return ms
+        }
+        return -1L
+    }
+
+    /**
+     * Отдаём позицию обратно вызывающему, чтобы Лампа обновила свой
+     * таймлайн. Без этого она помнит только то, что видела до запуска плеера.
+     */
+    private fun publishResult() {
+        val p = player ?: return
+        setResult(
+            RESULT_OK,
+            Intent()
+                .putExtra("position", p.currentPosition.toInt())
+                .putExtra("duration", if (p.duration > 0) p.duration.toInt() else 0)
+                .putExtra("end_by", "user")
+        )
+    }
+
     private fun posKey(uri: Uri): String {
         val id = try {
             val hash = uri.getQueryParameter("link") ?: uri.getQueryParameter("hash")
@@ -525,6 +564,7 @@ class PlayerActivity : ComponentActivity() {
     private fun savePosition() {
         val p = player ?: return
         val uri = currentUri ?: return
+        publishResult()
         if (p.duration > 0 && p.currentPosition < p.duration - 15_000L) {
             prefs?.edit()?.putLong(posKey(uri), p.currentPosition)?.apply()
         } else {
@@ -713,6 +753,28 @@ class PlayerActivity : ComponentActivity() {
         playerView.showController()
         hideStockButtons()
         if (focus && !hasPanelFocus()) firstActionButton().requestFocus()
+    }
+
+    /**
+     * Куда встать фокусом, когда панель поднимают с пульта.
+     *
+     * OK — на воспроизведение, «вниз» — на полосу перемотки, «вверх» — на
+     * наши иконки. Кнопки Media3 появляются не сразу, поэтому наводимся
+     * после кадра отрисовки.
+     */
+    private fun showUiFocused(keyCode: Int) {
+        playerView.showController()
+        hideStockButtons()
+        playerView.post {
+            val id = when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_DOWN -> androidx.media3.ui.R.id.exo_progress
+                KeyEvent.KEYCODE_DPAD_UP -> 0
+                else -> androidx.media3.ui.R.id.exo_play_pause
+            }
+            val target = if (id == 0) null
+            else playerView.findViewById<View>(id)?.takeIf { it.isFocusable }
+            (target ?: firstActionButton()).requestFocus()
+        }
     }
 
     /** Первая доступная кнопка панели действий — для наведения фокуса. */
@@ -1605,7 +1667,6 @@ class PlayerActivity : ComponentActivity() {
         // проваливается. Иначе тот же OK долетал до кнопки записи, на
         // которую фокус встал секунду назад, и запись стартовала сразу.
         if (!playerView.isControllerFullyVisible) {
-            showUi(focus = true)
             when (event.keyCode) {
                 KeyEvent.KEYCODE_DPAD_UP,
                 KeyEvent.KEYCODE_DPAD_DOWN,
@@ -1613,7 +1674,11 @@ class PlayerActivity : ComponentActivity() {
                 KeyEvent.KEYCODE_DPAD_RIGHT,
                 KeyEvent.KEYCODE_DPAD_CENTER,
                 KeyEvent.KEYCODE_ENTER,
-                KeyEvent.KEYCODE_NUMPAD_ENTER -> return true
+                KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                    showUiFocused(event.keyCode)
+                    return true
+                }
+                else -> showUi(focus = true)
             }
         } else {
             keepUiAlive()
