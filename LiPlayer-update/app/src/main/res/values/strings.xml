@@ -28,7 +28,14 @@
     <string name="val_shown">Показывать</string>
     <string name="val_hidden">Скрыта</string>
     <string name="ctl_snooze">Пауза записи</string>
-    <string name="menu_more">Ещё настройки</string>
+    <string name="menu_more">Настройки</string>
+    <string name="tr_rew">Назад</string>
+    <string name="tr_play">Пуск и пауза</string>
+    <string name="tr_ffwd">Вперёд</string>
+    <string name="cat_video">Видео</string>
+    <string name="cat_screen">Экран</string>
+    <string name="cat_record">Запись</string>
+    <string name="cat_clock">Часы</string>
 
     <string name="rec_pause">Пауза записи</string>
     <string name="rec_resume">Продолжить запись</string>

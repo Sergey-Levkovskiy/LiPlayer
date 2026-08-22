@@ -22,7 +22,6 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -161,31 +160,35 @@ class PlayerActivity : ComponentActivity() {
 
     private lateinit var root: FrameLayout
     private lateinit var playerView: PlayerView
-    private lateinit var leftTop: LinearLayout
-    private lateinit var btnLibrary: ImageButton
+    private lateinit var rightCol: LinearLayout
     private lateinit var clock: TextView
     private lateinit var hud: TextView
     private lateinit var drawer: LinearLayout
     private lateinit var drawerList: ListView
     private lateinit var drawerEmpty: TextView
     private lateinit var popup: LinearLayout
-    private lateinit var actionBar: LinearLayout
-    private lateinit var sideScroll: ScrollView
-    private lateinit var sideBar: LinearLayout
-    private lateinit var auxPanel: LinearLayout
+    private lateinit var menuCats: LinearLayout
+    private lateinit var menuDetail: LinearLayout
     private lateinit var recBadge: LinearLayout
     private lateinit var recDot: ImageView
     private lateinit var recSize: TextView
 
+    private lateinit var btnSettings: ImageButton
     private lateinit var btnRecord: ImageButton
     private lateinit var btnRecPause: ImageButton
     private lateinit var btnRecSnooze: ImageButton
     private lateinit var btnRecStop: ImageButton
+    private lateinit var btnLibrary: ImageButton
     private lateinit var btnShift: ImageButton
-    private lateinit var btnSettings: ImageButton
+    private lateinit var btnRew: ImageButton
+    private lateinit var btnPlay: ImageButton
+    private lateinit var btnFfwd: ImageButton
 
-    private val rowViews = ArrayList<View>(ROW_COUNT)
-    private val rowLabels = ArrayList<TextView>(ROW_COUNT)
+    /** Подписи рядов открытой категории: id ряда -> TextView. */
+    private val detailLabels = HashMap<Int, TextView>()
+
+    /** Индекс открытой категории, -1 — второй уровень закрыт. */
+    private var catIndex = -1
 
     private var player: ExoPlayer? = null
     private var prefs: SharedPreferences? = null
@@ -299,7 +302,6 @@ class PlayerActivity : ComponentActivity() {
             }
         )
 
-        buildSideBar()
         wireActions()
         styleControls()
         applyClockStyle()
@@ -342,8 +344,7 @@ class PlayerActivity : ComponentActivity() {
     private fun bindViews() {
         root = findViewById(R.id.root)
         playerView = findViewById(R.id.player_view)
-        leftTop = findViewById(R.id.left_top)
-        btnLibrary = findViewById(R.id.btn_library)
+        rightCol = findViewById(R.id.right_col)
         clock = findViewById(R.id.clock)
         hud = findViewById(R.id.hud)
         drawer = findViewById(R.id.drawer)
@@ -351,20 +352,22 @@ class PlayerActivity : ComponentActivity() {
         drawerList.itemsCanFocus = true
         drawerEmpty = findViewById(R.id.drawer_empty)
         popup = findViewById(R.id.popup)
-        actionBar = findViewById(R.id.action_bar)
-        sideScroll = findViewById(R.id.side_scroll)
-        sideBar = findViewById(R.id.side_bar)
-        auxPanel = findViewById(R.id.aux_panel)
+        menuCats = findViewById(R.id.menu_cats)
+        menuDetail = findViewById(R.id.menu_detail)
         recBadge = findViewById(R.id.rec_badge)
         recDot = findViewById(R.id.rec_dot)
         recSize = findViewById(R.id.rec_size)
 
+        btnSettings = findViewById(R.id.btn_settings)
         btnRecord = findViewById(R.id.btn_record)
         btnRecPause = findViewById(R.id.btn_rec_pause)
         btnRecSnooze = findViewById(R.id.btn_rec_snooze)
         btnRecStop = findViewById(R.id.btn_rec_stop)
+        btnLibrary = findViewById(R.id.btn_library)
         btnShift = findViewById(R.id.btn_shift)
-        btnSettings = findViewById(R.id.btn_settings)
+        btnRew = findViewById(R.id.btn_rew)
+        btnPlay = findViewById(R.id.btn_play)
+        btnFfwd = findViewById(R.id.btn_ffwd)
     }
 
     // ---------------------------------------------------------------- настройки
@@ -436,13 +439,16 @@ class PlayerActivity : ComponentActivity() {
                 onVideoGeometryChanged(videoSize)
 
             override fun onTracksChanged(tracks: Tracks) {
-                if (sideScroll.visibility == View.VISIBLE) refreshAllRows()
+                if (menuDetail.visibility == View.VISIBLE) refreshAllRows()
             }
 
             override fun onPlaybackStateChanged(state: Int) {
                 // Поток поднялся — счётчик попыток обнуляем.
                 if (state == Player.STATE_READY) retries = 0
+                syncPlayButton()
             }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) = syncPlayButton()
 
             override fun onPlayerError(error: PlaybackException) {
                 // Сначала фиксируем позицию, потом пробуем поднять поток.
@@ -758,80 +764,86 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
-    // ------------------------------------------------------------- панель действий
+    // --------------------------------------------------------- правый столбец
 
     private fun wireActions() {
-        btnLibrary.setOnClickListener { toggleDrawer() }
+        btnSettings.setOnClickListener { toggleMenu() }
         btnRecord.setOnClickListener { onRecordPressed() }
         btnRecPause.setOnClickListener { toggleRecPause() }
         btnRecSnooze.setOnClickListener { snoozeRecording() }
         btnRecStop.setOnClickListener { stopRecording() }
+        btnLibrary.setOnClickListener { toggleDrawer() }
         btnShift.setOnClickListener { openShiftPopup() }
-        btnSettings.setOnClickListener { toggleSidePanel() }
+
+        btnRew.setOnClickListener { player?.seekBack(); keepUiAlive() }
+        btnFfwd.setOnClickListener { player?.seekForward(); keepUiAlive() }
+        btnPlay.setOnClickListener {
+            val p = player ?: return@setOnClickListener
+            p.playWhenReady = !p.isPlaying
+            syncPlayButton()
+            keepUiAlive()
+        }
+
         syncRecordButtons()
+        syncPlayButton()
     }
 
-    /**
-     * Наши иконки живут и умирают вместе с панелью Media3 — иначе они
-     * висели бы над видео, когда панель уже скрылась.
-     */
+    private fun syncPlayButton() {
+        btnPlay.setImageResource(
+            if (player?.isPlaying == true) R.drawable.ic_pause else R.drawable.ic_play
+        )
+    }
+
+    /** Столбец живёт и умирает вместе с панелью Media3. */
     private fun onControllerVisibility(shown: Boolean) {
-        actionBar.visibility = if (shown) View.VISIBLE else View.GONE
-        btnLibrary.visibility = if (shown) View.VISIBLE else View.GONE
+        rightCol.visibility = if (shown) View.VISIBLE else View.GONE
         hideStockButtons()
         if (!shown) closePanels()
     }
 
     /**
-     * Шестерёнка Media3 скрывается по id: публичного сеттера у неё нет.
-     * Повторяем при каждом показе панели — библиотека её пересобирает.
+     * От панели Media3 оставляем только полосу времени: транспорт, настройки
+     * и субтитры переехали в правый столбец. Публичных сеттеров у этих
+     * кнопок нет, поэтому скрываем по id и повторяем при каждом показе —
+     * библиотека пересобирает панель.
      */
     private fun hideStockButtons() {
-        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_settings)
-            ?.visibility = View.GONE
-        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_subtitle)
-            ?.visibility = View.GONE
+        intArrayOf(
+            androidx.media3.ui.R.id.exo_settings,
+            androidx.media3.ui.R.id.exo_subtitle,
+            androidx.media3.ui.R.id.exo_center_controls
+        ).forEach { playerView.findViewById<View>(it)?.visibility = View.GONE }
     }
 
-    /** Любое нажатие поднимает панель и продлевает ей жизнь. */
     private fun showUi(focus: Boolean) {
         playerView.showController()
         hideStockButtons()
-        if (focus && !hasPanelFocus()) firstActionButton().requestFocus()
+        if (focus && !hasPanelFocus()) btnPlay.requestFocus()
     }
 
     /**
      * Куда встать фокусом, когда панель поднимают с пульта.
      *
      * OK — на воспроизведение, «вниз» — на полосу перемотки, «вверх» — на
-     * наши иконки. Кнопки Media3 появляются не сразу, поэтому наводимся
-     * после кадра отрисовки.
+     * настройки. Полоса Media3 появляется не сразу, поэтому после кадра.
      */
     private fun showUiFocused(keyCode: Int) {
         playerView.showController()
         hideStockButtons()
         playerView.post {
-            val id = when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_DOWN -> androidx.media3.ui.R.id.exo_progress
-                KeyEvent.KEYCODE_DPAD_UP -> 0
-                else -> androidx.media3.ui.R.id.exo_play_pause
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_DOWN ->
+                    (playerView.findViewById<View>(androidx.media3.ui.R.id.exo_progress)
+                        ?.takeIf { it.isFocusable } ?: btnPlay).requestFocus()
+                KeyEvent.KEYCODE_DPAD_UP -> btnSettings.requestFocus()
+                else -> btnPlay.requestFocus()
             }
-            val target = if (id == 0) null
-            else playerView.findViewById<View>(id)?.takeIf { it.isFocusable }
-            (target ?: firstActionButton()).requestFocus()
         }
     }
 
-    /** Первая доступная кнопка панели действий — для наведения фокуса. */
-    private fun firstActionButton(): View = when {
-        recorder.isRecording -> btnRecPause
-        recShowIndex == 0 -> btnRecord
-        else -> btnShift
-    }
-
     /**
-     * Открытая панель просто получает больший таймаут, а не вечную жизнь:
-     * меню должно закрываться само, если его бросили.
+     * Открытая панель получает больший таймаут, а не вечную жизнь: меню
+     * должно закрываться само, если его бросили.
      */
     private fun pinController(pinned: Boolean) {
         playerView.controllerShowTimeoutMs =
@@ -839,7 +851,6 @@ class PlayerActivity : ComponentActivity() {
         playerView.showController()
     }
 
-    /** Любое нажатие сбрасывает таймер закрытия. */
     private fun keepUiAlive() {
         playerView.showController()
     }
@@ -848,16 +859,14 @@ class PlayerActivity : ComponentActivity() {
         popup.visibility = View.GONE
         popup.removeAllViews()
         drawer.visibility = View.GONE
-        sideScroll.visibility = View.GONE
-        auxPanel.visibility = View.GONE
-        shiftCapture = false
+        closeMenu()
     }
 
     private fun hasPanelFocus(): Boolean {
         val f = currentFocus ?: return false
-        return f.isDescendantOf(actionBar) || f.isDescendantOf(popup) ||
-            f.isDescendantOf(sideBar) || f.isDescendantOf(drawer) ||
-            f === btnLibrary
+        return f.isDescendantOf(rightCol) || f.isDescendantOf(popup) ||
+            f.isDescendantOf(menuCats) || f.isDescendantOf(menuDetail) ||
+            f.isDescendantOf(drawer)
     }
 
     private fun View.isDescendantOf(group: ViewGroup): Boolean {
@@ -869,18 +878,64 @@ class PlayerActivity : ComponentActivity() {
         return false
     }
 
-    // ------------------------------------------------------------- всплывашки
+    // ------------------------------------------------------- расстановка панелей
 
-    /** Меню НАД кнопкой: три иконки для сдвига, три пункта для качества. */
-    private fun openPopup(views: List<View>) {
-        popup.removeAllViews()
-        views.forEach { popup.addView(it) }
-        popup.visibility = View.VISIBLE
-        pinController(true)
-        views.firstOrNull()?.requestFocus()
+    private val gapPx: Int
+        get() = (10 * resources.displayMetrics.density).roundToInt()
+
+    /** Y вида относительно корня: панель встаёт на уровень своего пункта. */
+    private fun topInRoot(v: View): Int {
+        var y = 0
+        var cur: View? = v
+        while (cur != null && cur !== root) {
+            y += cur.top
+            cur = cur.parent as? View
+        }
+        return y
     }
 
-    private fun popupIcon(iconRes: Int, label: String, action: () -> Unit): View {
+    /**
+     * Панели выстраиваются справа налево: столбец, первый уровень, второй.
+     * По вертикали каждая привязана к своему пункту, а не к центру экрана.
+     */
+    private fun placePanels() {
+        root.post {
+            val colW = rightCol.width
+            if (menuCats.visibility == View.VISIBLE) {
+                menuCats.translationX = -(colW + gapPx).toFloat()
+                menuCats.translationY = topInRoot(btnSettings).toFloat()
+            }
+            if (menuDetail.visibility == View.VISIBLE) {
+                menuDetail.translationX = -(colW + gapPx + menuCats.width + gapPx).toFloat()
+                val anchor = menuCats.getChildAt(catIndex)
+                menuDetail.translationY =
+                    topInRoot(anchor ?: btnSettings).toFloat()
+            }
+            if (popup.visibility == View.VISIBLE) {
+                popup.translationX = -(colW + gapPx).toFloat()
+                popup.translationY = topInRoot(btnShift).toFloat()
+            }
+        }
+    }
+
+    // ------------------------------------------------------------- всплывашка сдвига
+
+    private fun openShiftPopup() {
+        closeMenu()
+        drawer.visibility = View.GONE
+        popup.removeAllViews()
+        listOf(
+            popupRow(R.drawable.ic_arrow_up, getString(R.string.shift_top)) { setShiftMode(1) },
+            popupRow(R.drawable.ic_arrow_center, getString(R.string.shift_center)) { setShiftMode(0) },
+            popupRow(R.drawable.ic_arrow_down, getString(R.string.shift_bottom)) { setShiftMode(2) }
+        ).forEach { popup.addView(it) }
+        popup.visibility = View.VISIBLE
+        pinController(true)
+        placePanels()
+        popup.getChildAt(0)?.requestFocus()
+    }
+
+    private fun popupRow(iconRes: Int, label: String, action: () -> Unit): View {
         val row = LayoutInflater.from(this).inflate(R.layout.row_control, popup, false)
         row.findViewById<ImageView>(R.id.row_icon).setImageResource(iconRes)
         row.findViewById<TextView>(R.id.row_label).text = label
@@ -889,75 +944,101 @@ class PlayerActivity : ComponentActivity() {
             popup.visibility = View.GONE
             popup.removeAllViews()
             pinController(false)
-            actionBar.requestFocus()
+            btnShift.requestFocus()
         }
         return row
     }
 
-    private fun openShiftPopup() {
-        openPopup(
-            listOf(
-                popupIcon(R.drawable.ic_arrow_up, getString(R.string.shift_top)) {
-                    setShiftMode(1)
-                },
-                popupIcon(R.drawable.ic_arrow_center, getString(R.string.shift_center)) {
-                    setShiftMode(0)
-                },
-                popupIcon(R.drawable.ic_arrow_down, getString(R.string.shift_bottom)) {
-                    setShiftMode(2)
-                }
-            )
+    // ----------------------------------------------------------- меню настроек
+
+    private class Category(val titleRes: Int, val iconRes: Int, val rows: IntArray)
+
+    private val categories = listOf(
+        Category(
+            R.string.cat_video, R.drawable.ic_film,
+            intArrayOf(ROW_QUALITY, ROW_AUDIO, ROW_SUBS, ROW_SPEED)
+        ),
+        Category(
+            R.string.cat_screen, R.drawable.ic_screen,
+            intArrayOf(ROW_SCREEN, ROW_POSITION, ROW_ASPECT, ROW_SHIFT_MANUAL)
+        ),
+        Category(
+            R.string.cat_record, R.drawable.ic_record,
+            intArrayOf(ROW_REC_SHOW, ROW_REC_DELAY, ROW_REC_DUR, ROW_SNOOZE, ROW_REC_DIR)
+        ),
+        Category(
+            R.string.cat_clock, R.drawable.ic_clock,
+            intArrayOf(ROW_CLOCK, ROW_CLOCK_DIM)
         )
-    }
+    )
 
-    // ------------------------------------------------------------ панель настроек
-
-    private fun toggleSidePanel() {
-        if (sideScroll.visibility == View.VISIBLE) {
-            sideScroll.visibility = View.GONE
-            auxPanel.visibility = View.GONE
-            shiftCapture = false
+    private fun toggleMenu() {
+        if (menuCats.visibility == View.VISIBLE) {
+            closeMenu()
             pinController(false)
             btnSettings.requestFocus()
-        } else {
-            drawer.visibility = View.GONE
-            refreshAllRows()
-            sideScroll.visibility = View.VISIBLE
-            pinController(true)
-            rowViews.firstOrNull()?.requestFocus()
-            updateAux(0)
+            return
+        }
+        popup.visibility = View.GONE
+        drawer.visibility = View.GONE
+        buildCategories()
+        menuCats.visibility = View.VISIBLE
+        pinController(true)
+        placePanels()
+        menuCats.getChildAt(0)?.requestFocus()
+    }
+
+    private fun closeMenu() {
+        menuCats.visibility = View.GONE
+        menuCats.removeAllViews()
+        closeDetail()
+    }
+
+    private fun closeDetail() {
+        menuDetail.visibility = View.GONE
+        menuDetail.removeAllViews()
+        detailLabels.clear()
+        catIndex = -1
+        shiftCapture = false
+    }
+
+    private fun buildCategories() {
+        menuCats.removeAllViews()
+        val inflater = LayoutInflater.from(this)
+        categories.forEachIndexed { index, cat ->
+            val row = inflater.inflate(R.layout.row_control, menuCats, false)
+            row.findViewById<ImageView>(R.id.row_icon).setImageResource(cat.iconRes)
+            row.findViewById<TextView>(R.id.row_label).text = getString(cat.titleRes)
+            row.setOnClickListener { openCategory(index) }
+            row.setOnKeyListener { _, code, event ->
+                if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                // Второй уровень открывается влево — там он и находится.
+                if (code == KeyEvent.KEYCODE_DPAD_LEFT) { openCategory(index); true } else false
+            }
+            menuCats.addView(row)
         }
     }
 
-    private fun buildSideBar() {
+    private fun openCategory(index: Int) {
+        catIndex = index
+        shiftCapture = false
+        menuDetail.removeAllViews()
+        detailLabels.clear()
+
         val inflater = LayoutInflater.from(this)
-        val icons = intArrayOf(
-            R.drawable.ic_quality,
-            R.drawable.ic_audio,
-            R.drawable.ic_subs,
-            R.drawable.ic_speed,
-            R.drawable.ic_aspect,
-            R.drawable.ic_screen,
-            R.drawable.ic_position,
-            R.drawable.ic_shift,
-            R.drawable.ic_clock,
-            R.drawable.ic_clock_dim,
-            R.drawable.ic_record,
-            R.drawable.ic_timer,
-            R.drawable.ic_duration,
-            R.drawable.ic_pause_timed,
-            R.drawable.ic_folder
-        )
-        for (i in 0 until ROW_COUNT) {
-            val row = inflater.inflate(R.layout.row_control, sideBar, false)
-            row.findViewById<ImageView>(R.id.row_icon).setImageResource(icons[i])
+        categories[index].rows.forEach { rowId ->
+            val row = inflater.inflate(R.layout.row_control, menuDetail, false)
+            row.findViewById<ImageView>(R.id.row_icon).setImageResource(rowIcon(rowId))
+            val label = row.findViewById<TextView>(R.id.row_label)
+            detailLabels[rowId] = label
+
             row.setOnKeyListener { _, code, event ->
                 if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                 val fast = event.repeatCount > 4
 
                 // В режиме захвата вертикальные стрелки двигают кадр,
                 // а не переводят фокус на соседний ряд.
-                if (i == ROW_SHIFT_MANUAL && shiftCapture) {
+                if (rowId == ROW_SHIFT_MANUAL && shiftCapture) {
                     when (code) {
                         KeyEvent.KEYCODE_DPAD_UP -> { nudgeManual(-1, fast); true }
                         KeyEvent.KEYCODE_DPAD_DOWN -> { nudgeManual(1, fast); true }
@@ -968,31 +1049,27 @@ class PlayerActivity : ComponentActivity() {
                         else -> false
                     }
                 } else when (code) {
-                    KeyEvent.KEYCODE_DPAD_LEFT -> { stepRow(i, -1, fast); true }
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> { stepRow(i, 1, fast); true }
+                    KeyEvent.KEYCODE_DPAD_LEFT -> { stepRow(rowId, -1, fast); true }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> { stepRow(rowId, 1, fast); true }
                     else -> false
                 }
             }
             row.setOnClickListener {
-                if (i == ROW_SHIFT_MANUAL) setShiftCapture(!shiftCapture)
-                else stepRow(i, 1, false)
+                if (rowId == ROW_SHIFT_MANUAL) setShiftCapture(!shiftCapture)
+                else stepRow(rowId, 1, false)
             }
-            row.setOnFocusChangeListener { _, hasFocus ->
-                if (hasFocus) {
-                    if (shiftCapture && i != ROW_SHIFT_MANUAL) setShiftCapture(false)
-                    updateAux(i)
-                }
-            }
-            rowViews.add(row)
-            rowLabels.add(row.findViewById(R.id.row_label))
-            sideBar.addView(row)
+            menuDetail.addView(row)
+            refreshRow(rowId)
         }
+
+        menuDetail.visibility = View.VISIBLE
+        placePanels()
+        menuDetail.getChildAt(0)?.requestFocus()
     }
 
     private fun setShiftCapture(on: Boolean) {
         shiftCapture = on
         if (on) shiftMode = 3
-        updateAux(ROW_SHIFT_MANUAL)
         refreshRow(ROW_SHIFT_MANUAL)
     }
 
@@ -1001,96 +1078,34 @@ class PlayerActivity : ComponentActivity() {
         shiftPx += dir * (if (fast) 24f else 4f)
         applyShift(showHud = false)
         refreshRow(ROW_SHIFT_MANUAL)
-        updateAux(ROW_SHIFT_MANUAL)
         keepUiAlive()
     }
 
-    /**
-     * Подсказка слева от выбранного ряда.
-     *
-     * У дорожек и субтитров — весь список сразу, чтобы не перебирать
-     * вслепую. У ручного смещения — текущее значение и что нажимать.
-     */
-    private fun updateAux(row: Int) {
-        when (row) {
-            ROW_AUDIO -> {
-                val list = flatTracks(C.TRACK_TYPE_AUDIO)
-                showAux(
-                    list.mapIndexed { i, (g, t) -> trackLabel(g.getTrackFormat(t), i) },
-                    audioIndex
-                )
-            }
-            ROW_SUBS -> {
-                val labels = ArrayList<String>()
-                labels.add(getString(R.string.val_off))
-                flatTracks(C.TRACK_TYPE_TEXT).forEachIndexed { i, (g, t) ->
-                    labels.add(trackLabel(g.getTrackFormat(t), i))
-                }
-                showAux(labels, subsIndex)
-            }
-            ROW_QUALITY -> {
-                val labels = arrayListOf(
-                    getString(R.string.val_max), getString(R.string.val_auto)
-                )
-                flatTracks(C.TRACK_TYPE_VIDEO).forEach { (g, t) ->
-                    labels.add(videoLabel(g.getTrackFormat(t)))
-                }
-                showAux(labels, qualityIndex)
-            }
-            ROW_POSITION -> showAux(
-                (POSITIONS.indices).map { positionLabel(it) },
-                if (SCREEN_IN[screenIndex] == 0) -1 else posIndex
-            )
-            ROW_SHIFT_MANUAL -> {
-                val lines = arrayListOf(
-                    getString(R.string.shift_now, shiftPx.roundToInt()),
-                    getString(R.string.shift_limit, safeMarginPx.roundToInt())
-                )
-                if (!hasHardwareBars()) lines.add(getString(R.string.shift_no_bars))
-                lines.add(
-                    getString(
-                        if (shiftCapture) R.string.shift_capture_on
-                        else R.string.shift_capture_off
-                    )
-                )
-                showAux(lines, if (shiftCapture) lines.size - 1 else -1)
-            }
-            else -> auxPanel.visibility = View.GONE
-        }
-    }
-
-    private fun positionLabel(index: Int): String = getString(
-        when (index) {
-            1 -> R.string.pos_top_left
-            2 -> R.string.pos_top_right
-            3 -> R.string.pos_bottom_left
-            4 -> R.string.pos_bottom_right
-            else -> R.string.pos_center
-        }
-    )
-
-    private fun showAux(labels: List<String>, current: Int) {
-        auxPanel.removeAllViews()
-        if (labels.isEmpty()) {
-            auxPanel.visibility = View.GONE
-            return
-        }
-        val inflater = LayoutInflater.from(this)
-        labels.forEachIndexed { i, s ->
-            val tv = inflater.inflate(R.layout.row_aux, auxPanel, false) as TextView
-            tv.text = s
-            if (i == current) tv.setBackgroundResource(R.drawable.row_selected)
-            auxPanel.addView(tv)
-        }
-        auxPanel.visibility = View.VISIBLE
-    }
-
     private fun refreshAllRows() {
-        for (i in 0 until ROW_COUNT) refreshRow(i)
+        detailLabels.keys.toList().forEach { refreshRow(it) }
     }
 
-    private fun refreshRow(i: Int) {
-        rowLabels[i].text = getString(R.string.row_label, rowTitle(i), rowValue(i))
+    private fun refreshRow(id: Int) {
+        val label = detailLabels[id] ?: return
+        label.text = getString(R.string.row_label, rowTitle(id), rowValue(id))
+    }
+
+    private fun rowIcon(id: Int): Int = when (id) {
+        ROW_QUALITY -> R.drawable.ic_quality
+        ROW_AUDIO -> R.drawable.ic_audio
+        ROW_SUBS -> R.drawable.ic_subs
+        ROW_SPEED -> R.drawable.ic_speed
+        ROW_SCREEN -> R.drawable.ic_screen
+        ROW_POSITION -> R.drawable.ic_position
+        ROW_ASPECT -> R.drawable.ic_aspect
+        ROW_SHIFT_MANUAL -> R.drawable.ic_shift
+        ROW_CLOCK -> R.drawable.ic_clock
+        ROW_CLOCK_DIM -> R.drawable.ic_clock_dim
+        ROW_REC_SHOW -> R.drawable.ic_record
+        ROW_REC_DELAY -> R.drawable.ic_timer
+        ROW_REC_DUR -> R.drawable.ic_duration
+        ROW_SNOOZE -> R.drawable.ic_pause_timed
+        else -> R.drawable.ic_folder
     }
 
     private fun rowTitle(i: Int): String = getString(
@@ -1113,6 +1128,16 @@ class PlayerActivity : ComponentActivity() {
         }
     )
 
+    private fun positionLabel(index: Int): String = getString(
+        when (index) {
+            1 -> R.string.pos_top_left
+            2 -> R.string.pos_top_right
+            3 -> R.string.pos_bottom_left
+            4 -> R.string.pos_bottom_right
+            else -> R.string.pos_center
+        }
+    )
+
     private fun rowValue(i: Int): String = when (i) {
         ROW_QUALITY -> qualityValue()
         ROW_AUDIO -> trackValue(C.TRACK_TYPE_AUDIO, audioIndex)
@@ -1130,7 +1155,9 @@ class PlayerActivity : ComponentActivity() {
         else getString(R.string.screen_inches, SCREEN_IN[screenIndex])
         ROW_POSITION -> if (SCREEN_IN[screenIndex] == 0) getString(R.string.pos_na)
         else positionLabel(posIndex)
-        ROW_SHIFT_MANUAL -> getString(R.string.val_px, shiftPx.roundToInt())
+        ROW_SHIFT_MANUAL -> if (shiftCapture)
+            getString(R.string.shift_manual_on, shiftPx.roundToInt())
+        else getString(R.string.val_px, shiftPx.roundToInt())
         ROW_CLOCK -> when (clockSize) {
             0 -> getString(R.string.val_off)
             1 -> getString(R.string.clock_small)
@@ -1212,7 +1239,6 @@ class PlayerActivity : ComponentActivity() {
             }
         }
         refreshRow(i)
-        updateAux(i)
         keepUiAlive()
     }
 
@@ -1428,7 +1454,6 @@ class PlayerActivity : ComponentActivity() {
         recResumeAt = 0L
         recDot.alpha = 1f
         recBadge.visibility = View.VISIBLE
-        leftTop.visibility = View.VISIBLE
         refreshRecBadge()
         syncRecordButtons()
         Toast.makeText(
@@ -1496,7 +1521,9 @@ class PlayerActivity : ComponentActivity() {
             getString(R.string.rec_snooze, fmtMinSec(SNOOZE_SEC[snoozeIndex]))
 
         // Фокус не должен провалиться на скрытую кнопку.
-        if (currentFocus?.visibility == View.GONE) firstActionButton().requestFocus()
+        if (currentFocus?.visibility == View.GONE) {
+            (if (on) btnRecPause else btnPlay).requestFocus()
+        }
     }
 
     private fun refreshRecBadge() {
@@ -1582,7 +1609,8 @@ class PlayerActivity : ComponentActivity() {
             pinController(false)
             btnLibrary.requestFocus()
         } else {
-            sideScroll.visibility = View.GONE
+            closeMenu()
+            popup.visibility = View.GONE
             reloadRecordings()
             drawer.visibility = View.VISIBLE
             pinController(true)
@@ -1691,6 +1719,11 @@ class PlayerActivity : ComponentActivity() {
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             when {
                 shiftCapture -> { setShiftCapture(false); return true }
+                menuDetail.visibility == View.VISIBLE -> {
+                    closeDetail()
+                    menuCats.getChildAt(0)?.requestFocus()
+                    return true
+                }
                 popup.visibility == View.VISIBLE -> {
                     popup.visibility = View.GONE
                     popup.removeAllViews()
@@ -1699,7 +1732,7 @@ class PlayerActivity : ComponentActivity() {
                     return true
                 }
                 drawer.visibility == View.VISIBLE -> { toggleDrawer(); return true }
-                sideScroll.visibility == View.VISIBLE -> { toggleSidePanel(); return true }
+                menuCats.visibility == View.VISIBLE -> { toggleMenu(); return true }
                 playerView.isControllerFullyVisible -> {
                     playerView.hideController(); return true
                 }
