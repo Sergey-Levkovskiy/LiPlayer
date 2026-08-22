@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
@@ -175,6 +176,9 @@ class PlayerActivity : ComponentActivity() {
 
     private var shiftPx = 0f
     private var safeMarginPx = 0f
+
+    /** Последняя известная геометрия кадра — для пересчёта после смены размера. */
+    private var lastVideo: VideoSize? = null
     private var aspectKey = "shift_default"
 
     /** 0 центр, 1 верхний край, 2 нижний край, 3 вручную. */
@@ -485,32 +489,36 @@ class PlayerActivity : ComponentActivity() {
      * каждого свой, поэтому пиксели считаются заново.
      */
     private fun onVideoGeometryChanged(videoSize: VideoSize) {
-        root.post {
-            val viewW = root.width.toFloat()
-            val viewH = root.height.toFloat()
-            if (viewW <= 0f || viewH <= 0f || videoSize.height == 0) return@post
+        lastVideo = videoSize
+        root.post { recomputeGeometry() }
+    }
 
-            val aspect = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
-            if (aspect <= 0f) return@post
+    private fun recomputeGeometry() {
+        val videoSize = lastVideo ?: return
+        val viewW = playerView.width.toFloat()
+        val viewH = playerView.height.toFloat()
+        if (viewW <= 0f || viewH <= 0f || videoSize.height == 0) return
 
-            val shownH = if (viewW / viewH > aspect) viewH else viewW / aspect
-            safeMarginPx = ((viewH - shownH) / 2f).coerceAtLeast(0f)
-            aspectKey = "shift_" + (aspect * 100).roundToInt()
+        val aspect = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
+        if (aspect <= 0f) return
 
-            shiftPx = when (shiftMode) {
-                1 -> -edgeShift()
-                2 -> edgeShift()
-                3 -> prefs?.getFloat(aspectKey, 0f) ?: 0f
-                else -> 0f
-            }
-            applyShift(showHud = false)
+        val shownH = if (viewW / viewH > aspect) viewH else viewW / aspect
+        safeMarginPx = ((viewH - shownH) / 2f).coerceAtLeast(0f)
+        aspectKey = "shift_" + (aspect * 100).roundToInt()
+
+        shiftPx = when (shiftMode) {
+            1 -> -edgeShift()
+            2 -> edgeShift()
+            3 -> prefs?.getFloat(aspectKey, 0f) ?: 0f
+            else -> 0f
         }
+        applyShift(showHud = false)
     }
 
     // ------------------------------------------------------------------- shift
 
     private fun applyShift(showHud: Boolean) {
-        val limit = root.height / 2f
+        val limit = (if (playerView.height > 0) playerView.height else root.height) / 2f
         shiftPx = shiftPx.coerceIn(-limit, limit)
         playerView.translationY = shiftPx
         if (shiftMode == 3) prefs?.edit()?.putFloat(aspectKey, shiftPx)?.apply()
@@ -543,12 +551,35 @@ class PlayerActivity : ComponentActivity() {
         ui.postDelayed(hideHud, 2_000L)
     }
 
-    /** Уменьшение картинки под меньшую диагональ. */
+    /**
+     * Уменьшение картинки под меньшую диагональ.
+     *
+     * Меняем РАЗМЕР вьюхи, а не scaleX/scaleY. При масштабировании кадр
+     * сначала растянулся бы до полного экрана, а потом сжался — двойная
+     * переоцифровка. С меньшей вьюхой поверхность создаётся сразу нужного
+     * размера и декодированный кадр приводится к нему одним проходом.
+     *
+     * Побочный выигрыш: на 65″ поток 1280×720 ложится почти пиксель в
+     * пиксель (1920 × 65/98 = 1273), то есть без домысливания вовсе.
+     */
     private fun applyScreenSize() {
-        val inches = SCREEN_IN[screenIndex]
-        val scale = if (inches == 0) 1f else inches.toFloat() / BASE_DIAGONAL_IN
-        playerView.scaleX = scale
-        playerView.scaleY = scale
+        root.post {
+            val w = root.width
+            val h = root.height
+            if (w <= 0 || h <= 0) return@post
+
+            val inches = SCREEN_IN[screenIndex]
+            val scale = if (inches == 0) 1f else inches.toFloat() / BASE_DIAGONAL_IN
+
+            val lp = playerView.layoutParams as FrameLayout.LayoutParams
+            lp.width = (w * scale).roundToInt()
+            lp.height = (h * scale).roundToInt()
+            lp.gravity = Gravity.CENTER
+            playerView.layoutParams = lp
+
+            // Полоса и предел сдвига считаются от вьюхи, а не от экрана.
+            playerView.post { recomputeGeometry() }
+        }
     }
 
     // ------------------------------------------------------------- панель действий
