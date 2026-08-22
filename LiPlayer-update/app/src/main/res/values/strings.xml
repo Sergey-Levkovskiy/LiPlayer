@@ -95,6 +95,7 @@
     <string name="dir_internal">Внутренняя память</string>
     <string name="dir_removable">Накопитель %1$d</string>
 
+    <string name="lib_title">LiPlayer %1$s · %2$s</string>
     <string name="lib_hint">OK — смотреть · MENU или долгое нажатие — удалить запись</string>
     <string name="lib_empty">Пока нечего показать. Откройте файл вручную или запустите видео из другого приложения.</string>
     <string name="lib_recordings">Записи эфира</string>
