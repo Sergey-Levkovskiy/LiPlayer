@@ -137,8 +137,11 @@ class PlayerActivity : ComponentActivity() {
         /** Длительность записи, минуты. 0 — без лимита. */
         val REC_DURATIONS = intArrayOf(0, 15, 30, 45, 60, 90, 120, 180)
 
-        /** Пауза «на рекламу», секунды. */
+        /** Пауза записи «на рекламу», секунды. */
         val SNOOZE_SEC = intArrayOf(120, 180, 270, 300, 420, 600)
+
+        /** На сколько глушить звук кнопкой «Реклама», секунды. */
+        val AD_MUTE_SEC = intArrayOf(120, 180, 270, 300, 420, 600)
 
         // Ряды в панели «ещё настройки». Запись, качество и сдвиг живут
         // отдельными кнопками, поэтому здесь их нет.
@@ -158,7 +161,8 @@ class PlayerActivity : ComponentActivity() {
         const val ROW_SNOOZE = 13
         const val ROW_REC_DIR = 14
         const val ROW_LIBRARY = 15
-        const val ROW_COUNT = 16
+        const val ROW_AD_LEN = 16
+        const val ROW_COUNT = 17
     }
 
     private lateinit var root: FrameLayout
@@ -167,6 +171,8 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var scrim: View
     private lateinit var timeBar: DefaultTimeBar
     private lateinit var timeText: TextView
+    private lateinit var timePos: TextView
+    private lateinit var timeDur: TextView
     private lateinit var clock: TextView
     private lateinit var hud: TextView
     private lateinit var drawer: LinearLayout
@@ -188,6 +194,8 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var btnRew: ImageButton
     private lateinit var btnPlay: ImageButton
     private lateinit var btnFfwd: ImageButton
+    private lateinit var btnMute: ImageButton
+    private lateinit var btnAd: ImageButton
 
     /** Подписи рядов открытой категории: id ряда -> TextView. */
     private val detailLabels = HashMap<Int, TextView>()
@@ -199,6 +207,12 @@ class PlayerActivity : ComponentActivity() {
 
     /** Пока тянут полосу, позицию из плеера не подставляем. */
     private var scrubbing = false
+
+    private var adLenIndex = 2          // 4:30
+    private var muted = false
+
+    /** Когда вернуть звук после кнопки «Реклама», 0 — не задано. */
+    private var adUnmuteAt = 0L
 
     private var player: ExoPlayer? = null
     private var prefs: SharedPreferences? = null
@@ -281,6 +295,7 @@ class PlayerActivity : ComponentActivity() {
                 syncRecordButtons()
             }
             if (recorder.isRecording && recStopAt in 1..now) stopRecording()
+            if (adUnmuteAt in 1..now) setMuted(false, forSeconds = 0)
             if (recorder.isRecording || recStartAt > 0L) refreshRecBadge()
 
             ui.postDelayed(this, 1_000L)
@@ -348,6 +363,8 @@ class PlayerActivity : ComponentActivity() {
         bottomBar = findViewById(R.id.bottom_bar)
         timeBar = findViewById(R.id.time_bar)
         timeText = findViewById(R.id.time_text)
+        timePos = findViewById(R.id.time_pos)
+        timeDur = findViewById(R.id.time_dur)
         clock = findViewById(R.id.clock)
         hud = findViewById(R.id.hud)
         drawer = findViewById(R.id.drawer)
@@ -370,6 +387,8 @@ class PlayerActivity : ComponentActivity() {
         btnRew = findViewById(R.id.btn_rew)
         btnPlay = findViewById(R.id.btn_play)
         btnFfwd = findViewById(R.id.btn_ffwd)
+        btnMute = findViewById(R.id.btn_mute)
+        btnAd = findViewById(R.id.btn_ad)
     }
 
     // ---------------------------------------------------------------- настройки
@@ -386,6 +405,7 @@ class PlayerActivity : ComponentActivity() {
         recDelayIndex = p.getInt("rec_delay", 0).coerceIn(0, REC_DELAYS.size - 1)
         recDurIndex = p.getInt("rec_dur", 0).coerceIn(0, REC_DURATIONS.size - 1)
         snoozeIndex = p.getInt("snooze", 2).coerceIn(0, SNOOZE_SEC.size - 1)
+        adLenIndex = p.getInt("ad_len", 2).coerceIn(0, AD_MUTE_SEC.size - 1)
         recShowIndex = p.getInt("rec_show", 0).coerceIn(0, 1)
         recDirIndex = p.getInt("rec_dir", 0).coerceIn(0, recDirs().size - 1)
     }
@@ -475,6 +495,7 @@ class PlayerActivity : ComponentActivity() {
         }
 
         exo.setPlaybackSpeed(SPEEDS[speedIndex])
+        exo.volume = if (muted) 0f else 1f
         exo.playWhenReady = true
         player = exo
     }
@@ -778,6 +799,8 @@ class PlayerActivity : ComponentActivity() {
 
         btnRew.setOnClickListener { player?.seekBack(); keepUiAlive() }
         btnFfwd.setOnClickListener { player?.seekForward(); keepUiAlive() }
+        btnMute.setOnClickListener { setMuted(!muted, forSeconds = 0) }
+        btnAd.setOnClickListener { setMuted(true, AD_MUTE_SEC[adLenIndex]) }
         btnPlay.setOnClickListener {
             val p = player ?: return@setOnClickListener
             p.playWhenReady = !p.isPlaying
@@ -811,6 +834,31 @@ class PlayerActivity : ComponentActivity() {
 
         syncRecordButtons()
         syncPlayButton()
+        syncMuteButton()
+    }
+
+    /**
+     * Глушение звука. forSeconds > 0 — вернуть звук самому через это время:
+     * так работает кнопка «Реклама».
+     */
+    private fun setMuted(on: Boolean, forSeconds: Int) {
+        muted = on
+        player?.volume = if (on) 0f else 1f
+        adUnmuteAt = if (on && forSeconds > 0)
+            System.currentTimeMillis() + forSeconds * 1_000L else 0L
+        syncMuteButton()
+        if (adUnmuteAt > 0L) {
+            Toast.makeText(
+                this, getString(R.string.ad_muted, fmtMinSec(forSeconds)), Toast.LENGTH_SHORT
+            ).show()
+        }
+        keepUiAlive()
+    }
+
+    private fun syncMuteButton() {
+        btnMute.setImageResource(
+            if (muted) R.drawable.ic_volume_off else R.drawable.ic_volume
+        )
     }
 
     private fun syncPlayButton() {
@@ -832,10 +880,18 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
-    /** Прошло и осталось: у прямого эфира длительности нет, покажем только прошло. */
+    /**
+     * У полосы: слева сколько прошло, справа вся длина.
+     * В центре строки кнопок: прошло и сколько осталось.
+     *
+     * У прямого эфира длительности нет — правое поле остаётся пустым.
+     */
     private fun updateTimeText(position: Long) {
         val p = player
         val duration = if (p != null && p.duration > 0) p.duration else 0L
+
+        timePos.text = fmtPosition(position)
+        timeDur.text = if (duration > 0) fmtPosition(duration) else ""
         timeText.text = if (duration > 0) {
             getString(
                 R.string.time_pair, fmtPosition(position), fmtPosition(duration - position)
@@ -980,7 +1036,7 @@ class PlayerActivity : ComponentActivity() {
     private val categories = listOf(
         Category(
             R.string.cat_video, R.drawable.ic_film,
-            intArrayOf(ROW_QUALITY, ROW_AUDIO, ROW_SUBS, ROW_SPEED)
+            intArrayOf(ROW_QUALITY, ROW_AUDIO, ROW_SUBS, ROW_SPEED, ROW_AD_LEN)
         ),
         Category(
             R.string.cat_screen, R.drawable.ic_screen,
@@ -1042,16 +1098,18 @@ class PlayerActivity : ComponentActivity() {
             btn.setImageResource(cat.iconRes)
             btn.contentDescription = getString(cat.titleRes)
             btn.isFocusable = true
-            btn.setOnClickListener { openCategory(index) }
+            btn.setOnClickListener { openCategory(index, focusDetail = true) }
             btn.setOnFocusChangeListener { _, hasFocus ->
-                if (hasFocus && catIndex >= 0 && catIndex != index) openCategory(index)
+                // Перебор категорий обновляет подменю, но фокус не крадёт.
+                if (hasFocus && catIndex >= 0 && catIndex != index) {
+                    openCategory(index, focusDetail = false)
+                }
             }
             btn.setOnKeyListener { _, code, event ->
                 if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                 // Настройки категории лежат выше — туда и ведёт «вверх».
                 if (code == KeyEvent.KEYCODE_DPAD_UP) {
-                    if (catIndex != index) openCategory(index)
-                    else menuDetail.getChildAt(0)?.requestFocus()
+                    openCategory(index, focusDetail = true)
                     true
                 } else false
             }
@@ -1070,7 +1128,7 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
-    private fun openCategory(index: Int) {
+    private fun openCategory(index: Int, focusDetail: Boolean) {
         catIndex = index
         shiftCapture = false
         highlightCategory()
@@ -1117,6 +1175,8 @@ class PlayerActivity : ComponentActivity() {
         menuDetail.visibility = View.VISIBLE
         placePanels()
         keepUiAlive()
+        // По умолчанию курсор на верхнем пункте подменю.
+        if (focusDetail) menuDetail.getChildAt(0)?.requestFocus()
     }
 
     private fun setShiftCapture(on: Boolean) {
@@ -1158,6 +1218,7 @@ class PlayerActivity : ComponentActivity() {
         ROW_REC_DELAY -> R.drawable.ic_timer
         ROW_REC_DUR -> R.drawable.ic_duration
         ROW_SNOOZE -> R.drawable.ic_pause_timed
+        ROW_AD_LEN -> R.drawable.ic_ad
         else -> R.drawable.ic_folder
     }
 
@@ -1178,6 +1239,7 @@ class PlayerActivity : ComponentActivity() {
             ROW_REC_DELAY -> R.string.ctl_rec_delay
             ROW_REC_DUR -> R.string.ctl_rec_dur
             ROW_SNOOZE -> R.string.ctl_snooze
+            ROW_AD_LEN -> R.string.ctl_ad_len
             else -> R.string.ctl_rec_dir
         }
     )
@@ -1230,6 +1292,7 @@ class PlayerActivity : ComponentActivity() {
             getString(R.string.rec_unlimited)
         else getString(R.string.val_minutes, REC_DURATIONS[recDurIndex])
         ROW_SNOOZE -> fmtMinSec(SNOOZE_SEC[snoozeIndex])
+        ROW_AD_LEN -> fmtMinSec(AD_MUTE_SEC[adLenIndex])
         else -> dirLabel(recDirIndex)
     }
 
@@ -1286,6 +1349,10 @@ class PlayerActivity : ComponentActivity() {
             ROW_SNOOZE -> {
                 snoozeIndex = (snoozeIndex + dir + SNOOZE_SEC.size) % SNOOZE_SEC.size
                 saveInt("snooze", snoozeIndex)
+            }
+            ROW_AD_LEN -> {
+                adLenIndex = (adLenIndex + dir + AD_MUTE_SEC.size) % AD_MUTE_SEC.size
+                saveInt("ad_len", adLenIndex)
             }
             ROW_REC_DIR -> {
                 val n = recDirs().size

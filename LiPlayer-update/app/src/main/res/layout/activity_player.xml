@@ -36,56 +36,49 @@
         android:background="#0D000000"
         android:visibility="gone" />
 
-    <!-- Левый верхний угол: часы и индикатор записи. Часы сверху —
-         индикатор появляется и исчезает, и не должен их сдвигать. -->
+    <TextView
+        android:id="@+id/clock"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|right"
+        android:layout_marginTop="18dp"
+        android:layout_marginRight="26dp"
+        android:shadowColor="#FF000000"
+        android:shadowRadius="6"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:visibility="gone" />
+
     <LinearLayout
+        android:id="@+id/rec_badge"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|left"
         android:layout_marginTop="18dp"
         android:layout_marginLeft="22dp"
-        android:gravity="left"
-        android:orientation="vertical">
+        android:background="@drawable/badge_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingLeft="8dp"
+        android:paddingRight="10dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/rec_dot"
+            android:layout_width="11dp"
+            android:layout_height="11dp"
+            android:contentDescription="@string/ctl_record"
+            android:src="@drawable/ic_record" />
 
         <TextView
-            android:id="@+id/clock"
+            android:id="@+id/rec_size"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:shadowColor="#FF000000"
-            android:shadowRadius="6"
+            android:layout_marginLeft="7dp"
             android:textColor="#FFFFFF"
-            android:textSize="18sp"
-            android:visibility="gone" />
-
-        <LinearLayout
-            android:id="@+id/rec_badge"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:background="@drawable/badge_bg"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingLeft="8dp"
-            android:paddingRight="10dp"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp"
-            android:visibility="gone">
-
-            <ImageView
-                android:id="@+id/rec_dot"
-                android:layout_width="11dp"
-                android:layout_height="11dp"
-                android:contentDescription="@string/ctl_record"
-                android:src="@drawable/ic_record" />
-
-            <TextView
-                android:id="@+id/rec_size"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginLeft="7dp"
-                android:textColor="#FFFFFF"
-                android:textSize="13sp" />
-        </LinearLayout>
+            android:textSize="13sp" />
     </LinearLayout>
 
     <TextView
@@ -194,129 +187,182 @@
         android:paddingBottom="6dp"
         android:visibility="gone">
 
-        <androidx.media3.ui.DefaultTimeBar
-            android:id="@+id/time_bar"
-            android:layout_width="match_parent"
-            android:layout_height="26dp" />
-
+        <!-- Полоса прокрутки: слева сколько прошло, справа вся длина -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:gravity="center_vertical|left"
+            android:gravity="center_vertical"
             android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/time_pos"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginRight="14dp"
+                android:textColor="@color/brand_text"
+                android:textSize="15sp" />
+
+            <androidx.media3.ui.DefaultTimeBar
+                android:id="@+id/time_bar"
+                android:layout_width="0dp"
+                android:layout_height="26dp"
+                android:layout_weight="1" />
+
+            <TextView
+                android:id="@+id/time_dur"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="14dp"
+                android:textColor="@color/brand_text"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <!-- Кнопки слева, время по центру строки -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="left|center_vertical"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/btn_settings"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="@drawable/btn_focus"
+                    android:contentDescription="@string/menu_more"
+                    android:focusable="true"
+                    android:padding="9dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_gear" />
+                <ImageButton
+                    android:id="@+id/btn_record"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="@drawable/btn_focus"
+                    android:contentDescription="@string/ctl_record"
+                    android:focusable="true"
+                    android:padding="10dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_record" />
+                <ImageButton
+                    android:id="@+id/btn_rec_pause"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="@drawable/btn_focus"
+                    android:contentDescription="@string/rec_pause"
+                    android:focusable="true"
+                    android:padding="9dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_pause"
+                    android:visibility="gone" />
+                <ImageButton
+                    android:id="@+id/btn_rec_snooze"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="@drawable/btn_focus"
+                    android:contentDescription="@string/rec_snooze"
+                    android:focusable="true"
+                    android:padding="9dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_pause_timed"
+                    android:visibility="gone" />
+                <ImageButton
+                    android:id="@+id/btn_rec_stop"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="@drawable/btn_focus"
+                    android:contentDescription="@string/rec_stop"
+                    android:focusable="true"
+                    android:padding="10dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_stop"
+                    android:visibility="gone" />
+                <ImageButton
+                    android:id="@+id/btn_shift"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="@drawable/btn_focus"
+                    android:contentDescription="@string/ctl_shift"
+                    android:focusable="true"
+                    android:padding="9dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_shift" />
+
+                <View
+                    android:layout_width="14dp"
+                    android:layout_height="1dp" />
+
+                <ImageButton
+                    android:id="@+id/btn_rew"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="@drawable/btn_focus"
+                    android:contentDescription="@string/tr_rew"
+                    android:focusable="true"
+                    android:padding="9dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_rew" />
+                <ImageButton
+                    android:id="@+id/btn_play"
+                    android:layout_width="50dp"
+                    android:layout_height="50dp"
+                    android:background="@drawable/btn_focus"
+                    android:contentDescription="@string/tr_play"
+                    android:focusable="true"
+                    android:padding="10dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_pause" />
+                <ImageButton
+                    android:id="@+id/btn_ffwd"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="@drawable/btn_focus"
+                    android:contentDescription="@string/tr_ffwd"
+                    android:focusable="true"
+                    android:padding="9dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_ffwd" />
+
+                <View
+                    android:layout_width="14dp"
+                    android:layout_height="1dp" />
+
+                <ImageButton
+                    android:id="@+id/btn_mute"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="@drawable/btn_focus"
+                    android:contentDescription="@string/ctl_mute"
+                    android:focusable="true"
+                    android:padding="9dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_volume" />
+                <ImageButton
+                    android:id="@+id/btn_ad"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="@drawable/btn_focus"
+                    android:contentDescription="@string/ctl_ad"
+                    android:focusable="true"
+                    android:padding="9dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_ad" />
+            </LinearLayout>
 
             <TextView
                 android:id="@+id/time_text"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginRight="18dp"
+                android:layout_gravity="center"
                 android:textColor="@color/brand_text"
-                android:textSize="16sp" />
-
-            <ImageButton
-                android:id="@+id/btn_rew"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="@drawable/btn_focus"
-                android:contentDescription="@string/tr_rew"
-                android:focusable="true"
-                android:padding="9dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_rew" />
-
-            <ImageButton
-                android:id="@+id/btn_play"
-                android:layout_width="50dp"
-                android:layout_height="50dp"
-                android:background="@drawable/btn_focus"
-                android:contentDescription="@string/tr_play"
-                android:focusable="true"
-                android:padding="10dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_pause" />
-
-            <ImageButton
-                android:id="@+id/btn_ffwd"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="@drawable/btn_focus"
-                android:contentDescription="@string/tr_ffwd"
-                android:focusable="true"
-                android:padding="9dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_ffwd" />
-
-            <ImageButton
-                android:id="@+id/btn_settings"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:layout_marginLeft="18dp"
-                android:background="@drawable/btn_focus"
-                android:contentDescription="@string/menu_more"
-                android:focusable="true"
-                android:padding="9dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_gear" />
-
-            <ImageButton
-                android:id="@+id/btn_record"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="@drawable/btn_focus"
-                android:contentDescription="@string/ctl_record"
-                android:focusable="true"
-                android:padding="10dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_record" />
-
-            <ImageButton
-                android:id="@+id/btn_rec_pause"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="@drawable/btn_focus"
-                android:contentDescription="@string/rec_pause"
-                android:focusable="true"
-                android:padding="9dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_pause"
-                android:visibility="gone" />
-
-            <ImageButton
-                android:id="@+id/btn_rec_snooze"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="@drawable/btn_focus"
-                android:contentDescription="@string/rec_snooze"
-                android:focusable="true"
-                android:padding="9dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_pause_timed"
-                android:visibility="gone" />
-
-            <ImageButton
-                android:id="@+id/btn_rec_stop"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="@drawable/btn_focus"
-                android:contentDescription="@string/rec_stop"
-                android:focusable="true"
-                android:padding="10dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_stop"
-                android:visibility="gone" />
-
-            <ImageButton
-                android:id="@+id/btn_shift"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="@drawable/btn_focus"
-                android:contentDescription="@string/ctl_shift"
-                android:focusable="true"
-                android:padding="9dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_shift" />
-        </LinearLayout>
+                android:textSize="17sp" />
+        </FrameLayout>
     </LinearLayout>
 
 </FrameLayout>
