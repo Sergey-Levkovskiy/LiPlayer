@@ -36,49 +36,56 @@
         android:background="#0D000000"
         android:visibility="gone" />
 
-    <TextView
-        android:id="@+id/clock"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|right"
-        android:layout_marginTop="20dp"
-        android:layout_marginRight="26dp"
-        android:shadowColor="#FF000000"
-        android:shadowRadius="6"
-        android:textColor="#FFFFFF"
-        android:textSize="18sp"
-        android:visibility="gone" />
-
+    <!-- Левый верхний угол: часы и индикатор записи. Часы сверху —
+         индикатор появляется и исчезает, и не должен их сдвигать. -->
     <LinearLayout
-        android:id="@+id/rec_badge"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|left"
         android:layout_marginTop="18dp"
         android:layout_marginLeft="22dp"
-        android:background="@drawable/badge_bg"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingLeft="8dp"
-        android:paddingRight="10dp"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp"
-        android:visibility="gone">
-
-        <ImageView
-            android:id="@+id/rec_dot"
-            android:layout_width="11dp"
-            android:layout_height="11dp"
-            android:contentDescription="@string/ctl_record"
-            android:src="@drawable/ic_record" />
+        android:gravity="left"
+        android:orientation="vertical">
 
         <TextView
-            android:id="@+id/rec_size"
+            android:id="@+id/clock"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginLeft="7dp"
+            android:shadowColor="#FF000000"
+            android:shadowRadius="6"
             android:textColor="#FFFFFF"
-            android:textSize="13sp" />
+            android:textSize="18sp"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/rec_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/badge_bg"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingLeft="8dp"
+            android:paddingRight="10dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:visibility="gone">
+
+            <ImageView
+                android:id="@+id/rec_dot"
+                android:layout_width="11dp"
+                android:layout_height="11dp"
+                android:contentDescription="@string/ctl_record"
+                android:src="@drawable/ic_record" />
+
+            <TextView
+                android:id="@+id/rec_size"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="7dp"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp" />
+        </LinearLayout>
     </LinearLayout>
 
     <TextView
