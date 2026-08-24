@@ -33,6 +33,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -173,6 +174,7 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var timeText: TextView
     private lateinit var timePos: TextView
     private lateinit var timeDur: TextView
+    private lateinit var titleText: TextView
     private lateinit var clock: TextView
     private lateinit var hud: TextView
     private lateinit var drawer: LinearLayout
@@ -365,6 +367,7 @@ class PlayerActivity : ComponentActivity() {
         timeText = findViewById(R.id.time_text)
         timePos = findViewById(R.id.time_pos)
         timeDur = findViewById(R.id.time_dur)
+        titleText = findViewById(R.id.title_text)
         clock = findViewById(R.id.clock)
         hud = findViewById(R.id.hud)
         drawer = findViewById(R.id.drawer)
@@ -472,6 +475,8 @@ class PlayerActivity : ComponentActivity() {
 
             override fun onIsPlayingChanged(isPlaying: Boolean) = syncPlayButton()
 
+            override fun onMediaMetadataChanged(metadata: MediaMetadata) = updateTitle()
+
             override fun onPlayerError(error: PlaybackException) {
                 // Сначала фиксируем позицию, потом пробуем поднять поток.
                 savePosition()
@@ -497,6 +502,7 @@ class PlayerActivity : ComponentActivity() {
         exo.setPlaybackSpeed(SPEEDS[speedIndex])
         exo.volume = if (muted) 0f else 1f
         exo.playWhenReady = true
+        updateTitle()
         player = exo
     }
 
@@ -866,6 +872,39 @@ class PlayerActivity : ComponentActivity() {
             if (player?.isPlaying == true) R.drawable.ic_pause else R.drawable.ic_play
         )
         updateScrim()
+    }
+
+    /**
+     * Название канала, фильма или файла.
+     *
+     * Три источника по убыванию доверия: то, что передал вызывающий (Лампа
+     * и MX кладут «title» в extras), метаданные самого потока (ICY у IPTV,
+     * теги у файлов) и, если ничего нет, имя файла из ссылки.
+     */
+    private fun updateTitle() {
+        val fromCaller = intent?.getStringExtra("title")
+            ?: intent?.getStringExtra(Intent.EXTRA_TITLE)
+        val meta = player?.mediaMetadata
+        val fromStream = meta?.displayTitle?.toString()
+            ?: meta?.title?.toString()
+            ?: meta?.station?.toString()
+
+        val name = listOf(fromCaller, fromStream, fileNameOf(currentUri))
+            .firstOrNull { !it.isNullOrBlank() }
+
+        titleText.text = name.orEmpty()
+        titleText.visibility = if (name.isNullOrBlank()) View.GONE else View.VISIBLE
+    }
+
+    /** Имя файла из ссылки без расширения: последний запасной вариант. */
+    private fun fileNameOf(uri: Uri?): String? {
+        val segment = uri?.lastPathSegment ?: return null
+        val decoded = try {
+            Uri.decode(segment)
+        } catch (e: Exception) {
+            segment
+        }
+        return decoded.substringBeforeLast('.', decoded).takeIf { it.isNotBlank() }
     }
 
     /** Полоса и время: вызывается раз в секунду. */
