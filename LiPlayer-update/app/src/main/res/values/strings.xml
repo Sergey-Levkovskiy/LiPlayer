@@ -29,6 +29,9 @@
     <string name="val_hidden">Скрыта</string>
     <string name="ctl_snooze">Пауза записи</string>
     <string name="menu_more">Настройки</string>
+    <string name="ctl_library">Список записей</string>
+    <string name="lib_open">открыть</string>
+    <string name="time_pair">%1$s / −%2$s</string>
     <string name="tr_rew">Назад</string>
     <string name="tr_play">Пуск и пауза</string>
     <string name="tr_ffwd">Вперёд</string>

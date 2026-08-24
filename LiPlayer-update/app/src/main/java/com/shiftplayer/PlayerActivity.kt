@@ -50,6 +50,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.DefaultTimeBar
+import androidx.media3.ui.TimeBar
 import androidx.media3.ui.PlayerView
 import java.io.File
 import java.text.SimpleDateFormat
@@ -156,12 +157,16 @@ class PlayerActivity : ComponentActivity() {
         const val ROW_REC_DUR = 12
         const val ROW_SNOOZE = 13
         const val ROW_REC_DIR = 14
-        const val ROW_COUNT = 15
+        const val ROW_LIBRARY = 15
+        const val ROW_COUNT = 16
     }
 
     private lateinit var root: FrameLayout
     private lateinit var playerView: PlayerView
-    private lateinit var sideCol: LinearLayout
+    private lateinit var bottomBar: LinearLayout
+    private lateinit var scrim: View
+    private lateinit var timeBar: DefaultTimeBar
+    private lateinit var timeText: TextView
     private lateinit var clock: TextView
     private lateinit var hud: TextView
     private lateinit var drawer: LinearLayout
@@ -179,7 +184,6 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var btnRecPause: ImageButton
     private lateinit var btnRecSnooze: ImageButton
     private lateinit var btnRecStop: ImageButton
-    private lateinit var btnLibrary: ImageButton
     private lateinit var btnShift: ImageButton
     private lateinit var btnRew: ImageButton
     private lateinit var btnPlay: ImageButton
@@ -190,6 +194,11 @@ class PlayerActivity : ComponentActivity() {
 
     /** Индекс открытой категории, -1 — второй уровень закрыт. */
     private var catIndex = -1
+
+    private var barVisible = false
+
+    /** Пока тянут полосу, позицию из плеера не подставляем. */
+    private var scrubbing = false
 
     private var player: ExoPlayer? = null
     private var prefs: SharedPreferences? = null
@@ -239,6 +248,7 @@ class PlayerActivity : ComponentActivity() {
 
     private val ui = Handler(Looper.getMainLooper())
     private val hideHud = Runnable { hud.visibility = View.GONE }
+    private val hideBar = Runnable { setBarVisible(false) }
 
     private val clockFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
     private val stampFmt = SimpleDateFormat("d MMM, HH:mm", Locale.getDefault())
@@ -253,6 +263,7 @@ class PlayerActivity : ComponentActivity() {
         override fun run() {
             val now = System.currentTimeMillis()
             if (clockSize > 0) clock.text = clockFmt.format(Date(now))
+            if (barVisible) updateProgress()
 
             // Пишем позицию на ходу: onStop не вызывается ни при обрыве
             // потока, ни когда систему убивает приложение.
@@ -290,21 +301,9 @@ class PlayerActivity : ComponentActivity() {
         goFullscreen()
 
         playerView.resizeMode = ASPECTS[aspectIndex]
-        playerView.controllerShowTimeoutMs = UI_TIMEOUT_MS.toInt()
 
-        // Штатные настройки и субтитры Media3 не нужны — их заменяет наше
-        // меню, которое стоит на их месте в правом нижнем углу панели.
-        playerView.setShowSubtitleButton(false)
-        playerView.setControllerVisibilityListener(
-            object : PlayerView.ControllerVisibilityListener {
-                override fun onVisibilityChanged(visibility: Int) {
-                    onControllerVisibility(visibility == View.VISIBLE)
-                }
-            }
-        )
 
         wireActions()
-        styleControls()
         applyClockStyle()
         applyScreenSize()
         ui.post(tick)
@@ -345,7 +344,10 @@ class PlayerActivity : ComponentActivity() {
     private fun bindViews() {
         root = findViewById(R.id.root)
         playerView = findViewById(R.id.player_view)
-        sideCol = findViewById(R.id.side_col)
+        scrim = findViewById(R.id.scrim)
+        bottomBar = findViewById(R.id.bottom_bar)
+        timeBar = findViewById(R.id.time_bar)
+        timeText = findViewById(R.id.time_text)
         clock = findViewById(R.id.clock)
         hud = findViewById(R.id.hud)
         drawer = findViewById(R.id.drawer)
@@ -364,7 +366,6 @@ class PlayerActivity : ComponentActivity() {
         btnRecPause = findViewById(R.id.btn_rec_pause)
         btnRecSnooze = findViewById(R.id.btn_rec_snooze)
         btnRecStop = findViewById(R.id.btn_rec_stop)
-        btnLibrary = findViewById(R.id.btn_library)
         btnShift = findViewById(R.id.btn_shift)
         btnRew = findViewById(R.id.btn_rew)
         btnPlay = findViewById(R.id.btn_play)
@@ -765,7 +766,7 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
-    // ----------------------------------------------------------- левый столбец
+    // ------------------------------------------------------------ нижняя панель
 
     private fun wireActions() {
         btnSettings.setOnClickListener { toggleMenu() }
@@ -773,7 +774,6 @@ class PlayerActivity : ComponentActivity() {
         btnRecPause.setOnClickListener { toggleRecPause() }
         btnRecSnooze.setOnClickListener { snoozeRecording() }
         btnRecStop.setOnClickListener { stopRecording() }
-        btnLibrary.setOnClickListener { toggleDrawer() }
         btnShift.setOnClickListener { openShiftPopup() }
 
         btnRew.setOnClickListener { player?.seekBack(); keepUiAlive() }
@@ -785,6 +785,30 @@ class PlayerActivity : ComponentActivity() {
             keepUiAlive()
         }
 
+        // Своя панель — значит и полосу прокрутки ведём сами.
+        timeBar.setKeyTimeIncrement(SEEK_BAR_MS)
+        timeBar.setPlayedColor(ContextCompat.getColor(this, R.color.brand_accent))
+        timeBar.setScrubberColor(ContextCompat.getColor(this, R.color.brand_accent))
+        timeBar.setBufferedColor(ContextCompat.getColor(this, R.color.brand_buffered))
+        timeBar.setUnplayedColor(ContextCompat.getColor(this, R.color.brand_unplayed))
+        timeBar.addListener(object : TimeBar.OnScrubListener {
+            override fun onScrubStart(bar: TimeBar, position: Long) {
+                scrubbing = true
+                keepUiAlive()
+            }
+
+            override fun onScrubMove(bar: TimeBar, position: Long) {
+                updateTimeText(position)
+                keepUiAlive()
+            }
+
+            override fun onScrubStop(bar: TimeBar, position: Long, canceled: Boolean) {
+                scrubbing = false
+                if (!canceled) player?.seekTo(position)
+                keepUiAlive()
+            }
+        })
+
         syncRecordButtons()
         syncPlayButton()
     }
@@ -793,67 +817,64 @@ class PlayerActivity : ComponentActivity() {
         btnPlay.setImageResource(
             if (player?.isPlaying == true) R.drawable.ic_pause else R.drawable.ic_play
         )
+        updateScrim()
     }
 
-    /** Столбец живёт и умирает вместе с панелью Media3. */
-    private fun onControllerVisibility(shown: Boolean) {
-        sideCol.visibility = if (shown) View.VISIBLE else View.GONE
-        hideStockButtons()
-        if (!shown) closePanels()
-    }
-
-    /**
-     * От панели Media3 оставляем только полосу времени: транспорт, настройки
-     * и субтитры переехали в правый столбец. Публичных сеттеров у этих
-     * кнопок нет, поэтому скрываем по id и повторяем при каждом показе —
-     * библиотека пересобирает панель.
-     */
-    private fun hideStockButtons() {
-        intArrayOf(
-            androidx.media3.ui.R.id.exo_settings,
-            androidx.media3.ui.R.id.exo_subtitle,
-            androidx.media3.ui.R.id.exo_center_controls
-        ).forEach { playerView.findViewById<View>(it)?.visibility = View.GONE }
-    }
-
-    private fun showUi(focus: Boolean) {
-        playerView.showController()
-        hideStockButtons()
-        if (focus && !hasPanelFocus()) btnPlay.requestFocus()
-    }
-
-    /**
-     * Куда встать фокусом, когда панель поднимают с пульта.
-     *
-     * OK — на воспроизведение, «вниз» — на полосу перемотки, «вверх» — на
-     * настройки. Полоса Media3 появляется не сразу, поэтому после кадра.
-     */
-    private fun showUiFocused(keyCode: Int) {
-        playerView.showController()
-        hideStockButtons()
-        playerView.post {
-            when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_DOWN ->
-                    (playerView.findViewById<View>(androidx.media3.ui.R.id.exo_progress)
-                        ?.takeIf { it.isFocusable } ?: btnPlay).requestFocus()
-                KeyEvent.KEYCODE_DPAD_UP -> btnSettings.requestFocus()
-                else -> btnPlay.requestFocus()
-            }
+    /** Полоса и время: вызывается раз в секунду. */
+    private fun updateProgress() {
+        val p = player ?: return
+        val duration = if (p.duration > 0) p.duration else 0L
+        timeBar.setDuration(duration)
+        timeBar.setBufferedPosition(p.bufferedPosition)
+        if (!scrubbing) {
+            timeBar.setPosition(p.currentPosition)
+            updateTimeText(p.currentPosition)
         }
     }
 
-    /**
-     * Открытая панель получает больший таймаут, а не вечную жизнь: меню
-     * должно закрываться само, если его бросили.
-     */
-    private fun pinController(pinned: Boolean) {
-        playerView.controllerShowTimeoutMs =
-            (if (pinned) PANEL_TIMEOUT_MS else UI_TIMEOUT_MS).toInt()
-        playerView.showController()
+    /** Прошло и осталось: у прямого эфира длительности нет, покажем только прошло. */
+    private fun updateTimeText(position: Long) {
+        val p = player
+        val duration = if (p != null && p.duration > 0) p.duration else 0L
+        timeText.text = if (duration > 0) {
+            getString(
+                R.string.time_pair, fmtPosition(position), fmtPosition(duration - position)
+            )
+        } else {
+            fmtPosition(position)
+        }
     }
 
+    // ------------------------------------------------------- показ и скрытие
+
+    private fun setBarVisible(visible: Boolean) {
+        barVisible = visible
+        bottomBar.visibility = if (visible) View.VISIBLE else View.GONE
+        if (!visible) closePanels()
+        updateScrim()
+        ui.removeCallbacks(hideBar)
+        if (visible) ui.postDelayed(hideBar, currentTimeout())
+    }
+
+    /** Пока открыто меню, панель живёт дольше — но всё равно уезжает сама. */
+    private fun currentTimeout(): Long =
+        if (menuCats.visibility == View.VISIBLE || drawer.visibility == View.VISIBLE ||
+            popup.visibility == View.VISIBLE
+        ) PANEL_TIMEOUT_MS else UI_TIMEOUT_MS
+
     private fun keepUiAlive() {
-        playerView.showController()
+        if (!barVisible) {
+            setBarVisible(true)
+            return
+        }
+        ui.removeCallbacks(hideBar)
+        ui.postDelayed(hideBar, currentTimeout())
+    }
+
+    /** Затемнение 5 %: на паузе и когда открыто меню. */
+    private fun updateScrim() {
+        val paused = player?.isPlaying == false
+        scrim.visibility = if (barVisible || paused) View.VISIBLE else View.GONE
     }
 
     private fun closePanels() {
@@ -863,65 +884,65 @@ class PlayerActivity : ComponentActivity() {
         closeMenu()
     }
 
-    private fun hasPanelFocus(): Boolean {
-        val f = currentFocus ?: return false
-        return f.isDescendantOf(sideCol) || f.isDescendantOf(popup) ||
-            f.isDescendantOf(menuCats) || f.isDescendantOf(menuDetail) ||
-            f.isDescendantOf(drawer)
-    }
-
-    private fun View.isDescendantOf(group: ViewGroup): Boolean {
-        var p: View? = this
-        while (p != null) {
-            if (p === group) return true
-            p = p.parent as? View
+    /**
+     * Куда встать фокусом, когда панель поднимают с пульта.
+     *
+     * OK — на пуск, «вниз» — на полосу прокрутки, «вверх» — на настройки.
+     */
+    private fun focusInitial(keyCode: Int) {
+        bottomBar.post {
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_DOWN -> timeBar.requestFocus()
+                KeyEvent.KEYCODE_DPAD_UP -> btnSettings.requestFocus()
+                else -> btnPlay.requestFocus()
+            }
         }
-        return false
     }
 
     // ------------------------------------------------------- расстановка панелей
 
     private val gapPx: Int
-        get() = (10 * resources.displayMetrics.density).roundToInt()
+        get() = (8 * resources.displayMetrics.density).roundToInt()
 
-    /** Y вида относительно корня: панель встаёт на уровень своего пункта. */
-    private fun topInRoot(v: View): Int {
-        var y = 0
+    /** X вида относительно корня. */
+    private fun leftInRoot(v: View): Int {
+        var x = 0
         var cur: View? = v
         while (cur != null && cur !== root) {
-            y += cur.top
+            x += cur.left
             cur = cur.parent as? View
         }
-        return y
+        return x
     }
 
     /**
-     * Панели выстраиваются слева направо: столбец, первый уровень, второй.
-     * По вертикали каждая привязана к своему пункту, а не к центру экрана.
-     * Левый край панелей совпадает с краем столбца, поэтому смещение
-     * считается от его ширины.
+     * Меню растут вверх от панели: категории над ней, настройки над
+     * категориями. По горизонтали каждое привязано к своей кнопке — панель
+     * настроек встаёт над выбранной категорией, а не по центру экрана.
      */
     private fun placePanels() {
         root.post {
-            val colW = sideCol.width
+            val barH = bottomBar.height
             if (menuCats.visibility == View.VISIBLE) {
-                menuCats.translationX = (colW + gapPx).toFloat()
-                menuCats.translationY = topInRoot(btnSettings).toFloat()
+                menuCats.translationY = -(barH + gapPx).toFloat()
+                menuCats.translationX = leftInRoot(btnSettings).toFloat()
             }
             if (menuDetail.visibility == View.VISIBLE) {
-                menuDetail.translationX = (colW + gapPx + menuCats.width + gapPx).toFloat()
+                menuDetail.translationY = -(barH + gapPx + menuCats.height + gapPx).toFloat()
                 val anchor = menuCats.getChildAt(catIndex)
-                menuDetail.translationY =
-                    topInRoot(anchor ?: btnSettings).toFloat()
+                val x = if (anchor != null) leftInRoot(anchor) else leftInRoot(btnSettings)
+                // Не даём уехать за правый край экрана.
+                val maxX = (root.width - menuDetail.width - gapPx).coerceAtLeast(0)
+                menuDetail.translationX = x.coerceAtMost(maxX).toFloat()
             }
             if (popup.visibility == View.VISIBLE) {
-                popup.translationX = (colW + gapPx).toFloat()
-                popup.translationY = topInRoot(btnShift).toFloat()
+                popup.translationY = -(barH + gapPx).toFloat()
+                popup.translationX = leftInRoot(btnShift).toFloat()
             }
         }
     }
 
-    // ------------------------------------------------------------- всплывашка сдвига
+    // ------------------------------------------------------- всплывашка сдвига
 
     private fun openShiftPopup() {
         closeMenu()
@@ -933,7 +954,7 @@ class PlayerActivity : ComponentActivity() {
             popupRow(R.drawable.ic_arrow_down, getString(R.string.shift_bottom)) { setShiftMode(2) }
         ).forEach { popup.addView(it) }
         popup.visibility = View.VISIBLE
-        pinController(true)
+        keepUiAlive()
         placePanels()
         popup.getChildAt(0)?.requestFocus()
     }
@@ -946,8 +967,8 @@ class PlayerActivity : ComponentActivity() {
             action()
             popup.visibility = View.GONE
             popup.removeAllViews()
-            pinController(false)
             btnShift.requestFocus()
+            keepUiAlive()
         }
         return row
     }
@@ -967,7 +988,10 @@ class PlayerActivity : ComponentActivity() {
         ),
         Category(
             R.string.cat_record, R.drawable.ic_record,
-            intArrayOf(ROW_REC_SHOW, ROW_REC_DELAY, ROW_REC_DUR, ROW_SNOOZE, ROW_REC_DIR)
+            intArrayOf(
+                ROW_LIBRARY, ROW_REC_SHOW, ROW_REC_DELAY,
+                ROW_REC_DUR, ROW_SNOOZE, ROW_REC_DIR
+            )
         ),
         Category(
             R.string.cat_clock, R.drawable.ic_clock,
@@ -978,15 +1002,15 @@ class PlayerActivity : ComponentActivity() {
     private fun toggleMenu() {
         if (menuCats.visibility == View.VISIBLE) {
             closeMenu()
-            pinController(false)
             btnSettings.requestFocus()
+            keepUiAlive()
             return
         }
         popup.visibility = View.GONE
         drawer.visibility = View.GONE
         buildCategories()
         menuCats.visibility = View.VISIBLE
-        pinController(true)
+        keepUiAlive()
         placePanels()
         menuCats.getChildAt(0)?.requestFocus()
     }
@@ -1005,26 +1029,51 @@ class PlayerActivity : ComponentActivity() {
         shiftCapture = false
     }
 
+    /** Категории — только иконки, выбранная подсвечена. */
     private fun buildCategories() {
         menuCats.removeAllViews()
-        val inflater = LayoutInflater.from(this)
         categories.forEachIndexed { index, cat ->
-            val row = inflater.inflate(R.layout.row_control, menuCats, false)
-            row.findViewById<ImageView>(R.id.row_icon).setImageResource(cat.iconRes)
-            row.findViewById<TextView>(R.id.row_label).text = getString(cat.titleRes)
-            row.setOnClickListener { openCategory(index) }
-            row.setOnKeyListener { _, code, event ->
-                if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-                // Второй уровень открывается вправо — там он и находится.
-                if (code == KeyEvent.KEYCODE_DPAD_RIGHT) { openCategory(index); true } else false
+            val btn = ImageButton(this)
+            val side = (46 * resources.displayMetrics.density).roundToInt()
+            btn.layoutParams = LinearLayout.LayoutParams(side, side)
+            btn.setBackgroundResource(R.drawable.btn_focus)
+            btn.setPadding(gapPx, gapPx, gapPx, gapPx)
+            btn.scaleType = ImageView.ScaleType.FIT_CENTER
+            btn.setImageResource(cat.iconRes)
+            btn.contentDescription = getString(cat.titleRes)
+            btn.isFocusable = true
+            btn.setOnClickListener { openCategory(index) }
+            btn.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus && catIndex >= 0 && catIndex != index) openCategory(index)
             }
-            menuCats.addView(row)
+            btn.setOnKeyListener { _, code, event ->
+                if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                // Настройки категории лежат выше — туда и ведёт «вверх».
+                if (code == KeyEvent.KEYCODE_DPAD_UP) {
+                    if (catIndex != index) openCategory(index)
+                    else menuDetail.getChildAt(0)?.requestFocus()
+                    true
+                } else false
+            }
+            menuCats.addView(btn)
+        }
+        highlightCategory()
+    }
+
+    private fun highlightCategory() {
+        for (i in 0 until menuCats.childCount) {
+            val btn = menuCats.getChildAt(i) as? ImageButton ?: continue
+            btn.setColorFilter(
+                if (i == catIndex) ContextCompat.getColor(this, R.color.brand_accent)
+                else ContextCompat.getColor(this, R.color.brand_text)
+            )
         }
     }
 
     private fun openCategory(index: Int) {
         catIndex = index
         shiftCapture = false
+        highlightCategory()
         menuDetail.removeAllViews()
         detailLabels.clear()
 
@@ -1032,15 +1081,12 @@ class PlayerActivity : ComponentActivity() {
         categories[index].rows.forEach { rowId ->
             val row = inflater.inflate(R.layout.row_control, menuDetail, false)
             row.findViewById<ImageView>(R.id.row_icon).setImageResource(rowIcon(rowId))
-            val label = row.findViewById<TextView>(R.id.row_label)
-            detailLabels[rowId] = label
+            detailLabels[rowId] = row.findViewById(R.id.row_label)
 
             row.setOnKeyListener { _, code, event ->
                 if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                 val fast = event.repeatCount > 4
 
-                // В режиме захвата вертикальные стрелки двигают кадр,
-                // а не переводят фокус на соседний ряд.
                 if (rowId == ROW_SHIFT_MANUAL && shiftCapture) {
                     when (code) {
                         KeyEvent.KEYCODE_DPAD_UP -> { nudgeManual(-1, fast); true }
@@ -1058,8 +1104,11 @@ class PlayerActivity : ComponentActivity() {
                 }
             }
             row.setOnClickListener {
-                if (rowId == ROW_SHIFT_MANUAL) setShiftCapture(!shiftCapture)
-                else stepRow(rowId, 1, false)
+                when (rowId) {
+                    ROW_LIBRARY -> toggleDrawer()
+                    ROW_SHIFT_MANUAL -> setShiftCapture(!shiftCapture)
+                    else -> stepRow(rowId, 1, false)
+                }
             }
             menuDetail.addView(row)
             refreshRow(rowId)
@@ -1067,7 +1116,7 @@ class PlayerActivity : ComponentActivity() {
 
         menuDetail.visibility = View.VISIBLE
         placePanels()
-        menuDetail.getChildAt(0)?.requestFocus()
+        keepUiAlive()
     }
 
     private fun setShiftCapture(on: Boolean) {
@@ -1104,6 +1153,7 @@ class PlayerActivity : ComponentActivity() {
         ROW_SHIFT_MANUAL -> R.drawable.ic_shift
         ROW_CLOCK -> R.drawable.ic_clock
         ROW_CLOCK_DIM -> R.drawable.ic_clock_dim
+        ROW_LIBRARY -> R.drawable.ic_list
         ROW_REC_SHOW -> R.drawable.ic_record
         ROW_REC_DELAY -> R.drawable.ic_timer
         ROW_REC_DUR -> R.drawable.ic_duration
@@ -1123,6 +1173,7 @@ class PlayerActivity : ComponentActivity() {
             ROW_SHIFT_MANUAL -> R.string.shift_manual
             ROW_CLOCK -> R.string.ctl_clock
             ROW_CLOCK_DIM -> R.string.ctl_clock_dim
+            ROW_LIBRARY -> R.string.ctl_library
             ROW_REC_SHOW -> R.string.ctl_rec_show
             ROW_REC_DELAY -> R.string.ctl_rec_delay
             ROW_REC_DUR -> R.string.ctl_rec_dur
@@ -1170,6 +1221,7 @@ class PlayerActivity : ComponentActivity() {
         ROW_CLOCK_DIM -> getString(
             R.string.val_percent, (CLOCK_ALPHA[clockDim] * 100).roundToInt()
         )
+        ROW_LIBRARY -> getString(R.string.lib_open)
         ROW_REC_SHOW -> getString(
             if (recShowIndex == 0) R.string.val_shown else R.string.val_hidden
         )
@@ -1259,46 +1311,6 @@ class PlayerActivity : ComponentActivity() {
     }
 
     // -------------------------------------------------------------- оформление
-
-    /**
-     * Приводит панель Media3 к стилю проекта.
-     *
-     * Цвета полосы заданы атрибутами внутри библиотечной вёрстки, поэтому
-     * меняем их сеттерами DefaultTimeBar — это надёжнее, чем подменять
-     * exo_player_control_view.xml своей копией.
-     */
-    private fun styleControls() {
-        playerView.setShowPreviousButton(false)
-        playerView.setShowNextButton(false)
-        playerView.setShowRewindButton(true)
-        playerView.setShowFastForwardButton(true)
-
-        val accent = ContextCompat.getColor(this, R.color.brand_accent)
-        val text = ContextCompat.getColor(this, R.color.brand_text)
-
-        playerView.findViewById<DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.apply {
-            // Шаг стрелок по самой полосе — крупный, кнопки остаются мелкими.
-            setKeyTimeIncrement(SEEK_BAR_MS)
-            setPlayedColor(accent)
-            setScrubberColor(accent)
-            setBufferedColor(ContextCompat.getColor(this@PlayerActivity, R.color.brand_buffered))
-            setUnplayedColor(ContextCompat.getColor(this@PlayerActivity, R.color.brand_unplayed))
-        }
-
-        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_controller)
-            ?.let { tintTree(it, text) }
-
-        playerView.findViewById<ImageView>(androidx.media3.ui.R.id.exo_play_pause)
-            ?.setColorFilter(accent)
-    }
-
-    private fun tintTree(v: View, color: Int) {
-        when (v) {
-            is ViewGroup -> for (i in 0 until v.childCount) tintTree(v.getChildAt(i), color)
-            is ImageView -> v.setColorFilter(color)
-            is TextView -> v.setTextColor(color)
-        }
-    }
 
     // ------------------------------------------------------------------ tracks
 
@@ -1609,14 +1621,14 @@ class PlayerActivity : ComponentActivity() {
     private fun toggleDrawer() {
         if (drawer.visibility == View.VISIBLE) {
             drawer.visibility = View.GONE
-            pinController(false)
-            btnLibrary.requestFocus()
+            keepUiAlive()
+            btnSettings.requestFocus()
         } else {
             closeMenu()
             popup.visibility = View.GONE
             reloadRecordings()
             drawer.visibility = View.VISIBLE
-            pinController(true)
+            keepUiAlive()
             focusFirstRecording()
         }
     }
@@ -1629,7 +1641,7 @@ class PlayerActivity : ComponentActivity() {
      */
     private fun focusFirstRecording(attempt: Int = 0) {
         if (recordings.isEmpty()) {
-            btnLibrary.requestFocus()
+            btnSettings.requestFocus()
             return
         }
         drawerList.post {
@@ -1718,39 +1730,40 @@ class PlayerActivity : ComponentActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
 
-        // BACK закрывает открытое, а не выходит из плеера.
+        // BACK закрывает открытое по одному уровню, а не выходит из плеера.
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             when {
                 shiftCapture -> { setShiftCapture(false); return true }
-                menuDetail.visibility == View.VISIBLE -> {
-                    closeDetail()
-                    menuCats.getChildAt(0)?.requestFocus()
-                    return true
-                }
                 popup.visibility == View.VISIBLE -> {
                     popup.visibility = View.GONE
                     popup.removeAllViews()
-                    pinController(false)
                     btnShift.requestFocus()
                     return true
                 }
                 drawer.visibility == View.VISIBLE -> { toggleDrawer(); return true }
-                menuCats.visibility == View.VISIBLE -> { toggleMenu(); return true }
-                playerView.isControllerFullyVisible -> {
-                    playerView.hideController(); return true
+                menuDetail.visibility == View.VISIBLE -> {
+                    closeDetail()
+                    highlightCategory()
+                    menuCats.getChildAt(0)?.requestFocus()
+                    return true
                 }
+                menuCats.visibility == View.VISIBLE -> { toggleMenu(); return true }
+                barVisible -> { setBarVisible(false); return true }
             }
         }
 
-        if (event.keyCode == KeyEvent.KEYCODE_MENU || event.keyCode == KeyEvent.KEYCODE_SETTINGS) {
-            showUi(focus = true)
+        if (event.keyCode == KeyEvent.KEYCODE_MENU ||
+            event.keyCode == KeyEvent.KEYCODE_SETTINGS
+        ) {
+            keepUiAlive()
+            toggleMenu()
             return true
         }
 
         // Панель скрыта — первое нажатие ТОЛЬКО поднимает её и никуда не
-        // проваливается. Иначе тот же OK долетал до кнопки записи, на
-        // которую фокус встал секунду назад, и запись стартовала сразу.
-        if (!playerView.isControllerFullyVisible) {
+        // проваливается. Иначе тот же OK долетал до кнопки под фокусом.
+        if (!barVisible) {
+            setBarVisible(true)
             when (event.keyCode) {
                 KeyEvent.KEYCODE_DPAD_UP,
                 KeyEvent.KEYCODE_DPAD_DOWN,
@@ -1759,10 +1772,9 @@ class PlayerActivity : ComponentActivity() {
                 KeyEvent.KEYCODE_DPAD_CENTER,
                 KeyEvent.KEYCODE_ENTER,
                 KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                    showUiFocused(event.keyCode)
+                    focusInitial(event.keyCode)
                     return true
                 }
-                else -> showUi(focus = true)
             }
         } else {
             keepUiAlive()

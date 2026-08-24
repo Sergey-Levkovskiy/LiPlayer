@@ -1,15 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Всё управление собрано в одном левом столбце, сверху вниз:
-  настройки, запись (+ список записей и индикатор), сдвиг, часы, транспорт.
+  Панель Media3 отключена (use_controller=false) — своя даёт нужный порядок
+  элементов и лёгкое затемнение вместо штатных 60 % черноты.
 
-  menu_cats   : первый уровень меню — Видео / Экран / Запись / Часы
-  menu_detail : второй уровень — настройки выбранной категории, правее.
-                Оба выравниваются по вертикали КОДОМ: панель встаёт на уровень
-                своего пункта, а не по центру экрана.
-
-  От панели Media3 остаётся только полоса времени внизу: центральный блок
-  кнопок скрывается, транспорт живёт в правом столбце.
+  bottom_bar  : полоса прокрутки, под ней одна строка —
+                время, назад, пуск/пауза, вперёд, настройки, запись, сдвиг
+  menu_cats   : горизонтальное меню категорий НАД панелью
+  menu_detail : вертикальное меню настроек НАД категориями
+  scrim       : затемнение 5 % на паузе и при открытом меню
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -28,8 +26,60 @@
         android:background="@android:color/black"
         app:surface_type="surface_view"
         app:resize_mode="fit"
-        app:use_controller="true"
+        app:use_controller="false"
         app:show_buffering="when_playing" />
+
+    <View
+        android:id="@+id/scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#0D000000"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/clock"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|right"
+        android:layout_marginTop="20dp"
+        android:layout_marginRight="26dp"
+        android:shadowColor="#FF000000"
+        android:shadowRadius="6"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/rec_badge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|left"
+        android:layout_marginTop="18dp"
+        android:layout_marginLeft="22dp"
+        android:background="@drawable/badge_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingLeft="8dp"
+        android:paddingRight="10dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/rec_dot"
+            android:layout_width="11dp"
+            android:layout_height="11dp"
+            android:contentDescription="@string/ctl_record"
+            android:src="@drawable/ic_record" />
+
+        <TextView
+            android:id="@+id/rec_size"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="7dp"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp" />
+    </LinearLayout>
 
     <TextView
         android:id="@+id/hud"
@@ -46,88 +96,18 @@
         android:textSize="20sp"
         android:visibility="gone" />
 
-    <!-- Индикатор записи -->
-    <LinearLayout
-        android:id="@+id/rec_badge"
-        android:layout_gravity="top|left"
-        android:layout_marginTop="18dp"
-        android:layout_marginLeft="20dp"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:background="@drawable/badge_bg"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingLeft="7dp"
-        android:paddingRight="9dp"
-        android:paddingTop="3dp"
-        android:paddingBottom="3dp"
-        android:visibility="gone">
-
-        <ImageView
-        android:id="@+id/rec_dot"
-        android:layout_width="10dp"
-        android:layout_height="10dp"
-        android:contentDescription="@string/ctl_record"
-        android:src="@drawable/ic_record" />
-
-        <TextView
-        android:id="@+id/rec_size"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginLeft="6dp"
-        android:textColor="#FFFFFF"
-        android:textSize="12sp" />
-    </LinearLayout>
-
-    <!-- ================================== второй уровень меню (левее всех) -->
-    <LinearLayout
-        android:id="@+id/menu_detail"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|left"
-        android:layout_marginLeft="20dp"
-        android:background="@drawable/popup_bg"
-        android:orientation="vertical"
-        android:padding="8dp"
-        android:visibility="gone" />
-
-    <!-- ============================================ первый уровень меню -->
-    <LinearLayout
-        android:id="@+id/menu_cats"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|left"
-        android:layout_marginLeft="20dp"
-        android:background="@drawable/bar_bg"
-        android:orientation="vertical"
-        android:padding="8dp"
-        android:visibility="gone" />
-
-    <!-- ================================= всплывашка сдвига, у своей кнопки -->
-    <LinearLayout
-        android:id="@+id/popup"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|left"
-        android:layout_marginLeft="20dp"
-        android:background="@drawable/popup_bg"
-        android:orientation="vertical"
-        android:padding="6dp"
-        android:visibility="gone" />
-
-    <!-- ========================================== список записей, справа -->
+    <!-- ================================================= список записей -->
     <LinearLayout
         android:id="@+id/drawer"
         android:layout_width="470dp"
         android:layout_height="match_parent"
         android:layout_gravity="left"
-        android:layout_marginLeft="86dp"
         android:background="@drawable/drawer_bg"
         android:orientation="vertical"
         android:paddingLeft="20dp"
         android:paddingRight="20dp"
         android:paddingTop="24dp"
-        android:paddingBottom="18dp"
+        android:paddingBottom="120dp"
         android:visibility="gone">
 
         <TextView
@@ -160,44 +140,122 @@
             android:scrollbars="none" />
     </LinearLayout>
 
-    <!-- ============================================ правый столбец управления -->
+    <!-- ========================== вертикальное меню настроек, над категориями -->
     <LinearLayout
-        android:id="@+id/side_col"
+        android:id="@+id/menu_detail"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="left|center_vertical"
-        android:layout_marginLeft="20dp"
-        android:background="@drawable/bar_bg"
-        android:gravity="left"
+        android:layout_gravity="bottom|left"
+        android:background="@drawable/popup_bg"
         android:orientation="vertical"
-        android:paddingLeft="6dp"
-        android:paddingRight="6dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp">
+        android:padding="8dp"
+        android:visibility="gone" />
 
-        <!-- 1. Настройки -->
-        <ImageButton
-            android:id="@+id/btn_settings"
-            android:layout_width="46dp"
-            android:layout_height="46dp"
-            android:background="@drawable/btn_focus"
-            android:contentDescription="@string/menu_more"
-            android:focusable="true"
-            android:padding="9dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_gear" />
+    <!-- =============================== горизонтальное меню категорий, над панелью -->
+    <LinearLayout
+        android:id="@+id/menu_cats"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|left"
+        android:background="@drawable/popup_bg"
+        android:orientation="horizontal"
+        android:padding="6dp"
+        android:visibility="gone" />
 
-        <!-- 2. Запись: одна кнопка превращается в три -->
+    <!-- ============================================ всплывашка сдвига -->
+    <LinearLayout
+        android:id="@+id/popup"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|left"
+        android:background="@drawable/popup_bg"
+        android:orientation="vertical"
+        android:padding="6dp"
+        android:visibility="gone" />
+
+    <!-- ================================================== нижняя панель -->
+    <LinearLayout
+        android:id="@+id/bottom_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/panel_bg"
+        android:orientation="vertical"
+        android:paddingLeft="24dp"
+        android:paddingRight="24dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="6dp"
+        android:visibility="gone">
+
+        <androidx.media3.ui.DefaultTimeBar
+            android:id="@+id/time_bar"
+            android:layout_width="match_parent"
+            android:layout_height="26dp" />
+
         <LinearLayout
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="left|center_vertical"
+            android:layout_marginTop="2dp"
+            android:gravity="center_vertical|left"
             android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/time_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginRight="18dp"
+                android:textColor="@color/brand_text"
+                android:textSize="16sp" />
+
+            <ImageButton
+                android:id="@+id/btn_rew"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/btn_focus"
+                android:contentDescription="@string/tr_rew"
+                android:focusable="true"
+                android:padding="9dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_rew" />
+
+            <ImageButton
+                android:id="@+id/btn_play"
+                android:layout_width="50dp"
+                android:layout_height="50dp"
+                android:background="@drawable/btn_focus"
+                android:contentDescription="@string/tr_play"
+                android:focusable="true"
+                android:padding="10dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_pause" />
+
+            <ImageButton
+                android:id="@+id/btn_ffwd"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/btn_focus"
+                android:contentDescription="@string/tr_ffwd"
+                android:focusable="true"
+                android:padding="9dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_ffwd" />
+
+            <ImageButton
+                android:id="@+id/btn_settings"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginLeft="18dp"
+                android:background="@drawable/btn_focus"
+                android:contentDescription="@string/menu_more"
+                android:focusable="true"
+                android:padding="9dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_gear" />
 
             <ImageButton
                 android:id="@+id/btn_record"
-                android:layout_width="46dp"
-                android:layout_height="46dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:background="@drawable/btn_focus"
                 android:contentDescription="@string/ctl_record"
                 android:focusable="true"
@@ -207,119 +265,50 @@
 
             <ImageButton
                 android:id="@+id/btn_rec_pause"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:background="@drawable/btn_focus"
                 android:contentDescription="@string/rec_pause"
                 android:focusable="true"
-                android:padding="8dp"
+                android:padding="9dp"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_pause"
                 android:visibility="gone" />
 
             <ImageButton
                 android:id="@+id/btn_rec_snooze"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:background="@drawable/btn_focus"
                 android:contentDescription="@string/rec_snooze"
                 android:focusable="true"
-                android:padding="8dp"
+                android:padding="9dp"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_pause_timed"
                 android:visibility="gone" />
 
             <ImageButton
                 android:id="@+id/btn_rec_stop"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:background="@drawable/btn_focus"
                 android:contentDescription="@string/rec_stop"
                 android:focusable="true"
-                android:padding="9dp"
+                android:padding="10dp"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_stop"
                 android:visibility="gone" />
-        </LinearLayout>
-
-        <!-- Список записей -->
-        <ImageButton
-            android:id="@+id/btn_library"
-            android:layout_width="46dp"
-            android:layout_height="46dp"
-            android:background="@drawable/btn_focus"
-            android:contentDescription="@string/lib_recordings"
-            android:focusable="true"
-            android:padding="9dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_list" />
-
-        <!-- 3. Сдвиг -->
-        <ImageButton
-            android:id="@+id/btn_shift"
-            android:layout_width="46dp"
-            android:layout_height="46dp"
-            android:background="@drawable/btn_focus"
-            android:contentDescription="@string/ctl_shift"
-            android:focusable="true"
-            android:padding="9dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_shift" />
-
-        <!-- 4. Время -->
-        <TextView
-            android:id="@+id/clock"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="left"
-            android:layout_marginTop="4dp"
-            android:layout_marginLeft="6dp"
-            android:layout_marginBottom="4dp"
-            android:shadowColor="#FF000000"
-            android:shadowRadius="6"
-            android:textColor="#FFFFFF"
-            android:textSize="18sp"
-            android:visibility="gone" />
-
-        <!-- 5. Перемотка и старт/пауза -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:gravity="left|center_vertical"
-            android:orientation="horizontal">
 
             <ImageButton
-                android:id="@+id/btn_rew"
-                android:layout_width="42dp"
-                android:layout_height="42dp"
+                android:id="@+id/btn_shift"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:background="@drawable/btn_focus"
-                android:contentDescription="@string/tr_rew"
-                android:focusable="true"
-                android:padding="8dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_rew" />
-
-            <ImageButton
-                android:id="@+id/btn_play"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="@drawable/btn_focus"
-                android:contentDescription="@string/tr_play"
+                android:contentDescription="@string/ctl_shift"
                 android:focusable="true"
                 android:padding="9dp"
                 android:scaleType="fitCenter"
-                android:src="@drawable/ic_pause" />
-
-            <ImageButton
-                android:id="@+id/btn_ffwd"
-                android:layout_width="42dp"
-                android:layout_height="42dp"
-                android:background="@drawable/btn_focus"
-                android:contentDescription="@string/tr_ffwd"
-                android:focusable="true"
-                android:padding="8dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_ffwd" />
+                android:src="@drawable/ic_shift" />
         </LinearLayout>
     </LinearLayout>
 
